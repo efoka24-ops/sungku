@@ -22,6 +22,21 @@ function getTransport() {
   return transporter;
 }
 
+// Generic, non-throwing email send (used for notifications).
+export async function sendMail(to: string, subject: string, html: string, text?: string) {
+  if (!mailerConfigured()) {
+    console.log(`[MAIL:skipped] ${to} :: ${subject}`);
+    return { sent: false };
+  }
+  try {
+    await getTransport().sendMail({ from, to, subject, html, text: text || html.replace(/<[^>]+>/g, "") });
+    return { sent: true };
+  } catch (e: any) {
+    console.error(`[MAIL failed] ${to}: ${e.message}`);
+    return { sent: false, error: e.message };
+  }
+}
+
 export async function sendOtpEmail(to: string, code: string, purpose: string) {
   const reasons: Record<string, string> = {
     register_verify: "valider la création de votre compte Sungku",

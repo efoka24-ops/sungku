@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
 import { cashout, camooConfigured, normalizeStatus } from "../camoo";
+import { notifyContribution } from "../notifications";
 
 export const contributionsRouter = Router();
 
@@ -16,6 +17,7 @@ function simulateProviderConfirmation(contributionId: string) {
       where: { id: contributionId },
       data: { status: "CONFIRMED" },
     });
+    await notifyContribution(contributionId);
   }, 2500);
 }
 
@@ -71,6 +73,7 @@ contributionsRouter.post("/:campaignId/contributions", async (req, res) => {
           status: normalizeStatus(result.cashOut?.status || "PENDING"),
         },
       });
+      if (updated.status === "CONFIRMED") await notifyContribution(updated.id);
       return res.status(201).json(updated);
     } catch (e: any) {
       await prisma.contribution.update({ where: { id: contribution.id }, data: { status: "FAILED" } });

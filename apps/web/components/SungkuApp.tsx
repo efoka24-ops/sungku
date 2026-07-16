@@ -296,7 +296,7 @@ export default function SungkuApp() {
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             <button onClick={() => setView("home")} style={navBtn("home")}>Accueil</button>
             <button onClick={() => setView("create")} style={navBtn("create")}>Créer une campagne</button>
-            <button onClick={() => setView("dashboard")} style={navBtn("dashboard")}>Tableau de bord</button>
+            {user && <button onClick={() => setView("dashboard")} style={navBtn("dashboard")}>Tableau de bord</button>}
             <button onClick={() => setView("dev")} style={navBtn("dev")}>Développeurs</button>
           </div>
           {user ? (
@@ -796,6 +796,7 @@ function Dashboard({ campaign, user, token, onUser, onRequireAuth }: { campaign:
   const [withdrawCode, setWithdrawCode] = useState("");
   const [withdrawMsg, setWithdrawMsg] = useState<string | null>(null);
   const [withdrawErr, setWithdrawErr] = useState<string | null>(null);
+  const [withdrawDev, setWithdrawDev] = useState<string | null>(null);
   // KYC
   const [kycId, setKycId] = useState("");
   const [kycMethod, setKycMethod] = useState("mobile_money");
@@ -823,7 +824,8 @@ function Dashboard({ campaign, user, token, onUser, onRequireAuth }: { campaign:
     setWithdrawErr(null);
     if (!token) return onRequireAuth();
     try {
-      await api.post("/withdraw/request", { amount: Number(withdrawAmount.replace(/\s/g, "")), destination: withdrawDest }, token);
+      const r = await api.post("/withdraw/request", { amount: Number(withdrawAmount.replace(/\s/g, "")), destination: withdrawDest }, token);
+      if (r.devCode) setWithdrawDev(r.devCode);
       setWithdrawStep("otp");
     } catch (e: any) {
       setWithdrawErr(e.message);
@@ -918,7 +920,7 @@ function Dashboard({ campaign, user, token, onUser, onRequireAuth }: { campaign:
             <p style={{ fontSize: 14, color: "#2ECC71" }}>{withdrawMsg}</p>
           ) : withdrawStep === "otp" ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <p style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", margin: 0 }}>Un code de confirmation distinct a été envoyé à votre e-mail (double validation).</p>
+              <p style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", margin: 0 }}>Un code de confirmation distinct a été envoyé à votre e-mail (double validation).{withdrawDev ? ` (code test : ${withdrawDev})` : ""}</p>
               <input value={withdrawCode} onChange={(e) => setWithdrawCode(e.target.value)} placeholder="Code de retrait" style={{ boxSizing: "border-box", background: "#000", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", padding: "12px 14px", borderRadius: 10, fontSize: 14, letterSpacing: 4 }} />
               <button onClick={confirmWithdraw} style={{ ...violetBtn, padding: 12, fontSize: 14 }}>Confirmer le retrait</button>
               <button onClick={() => setWithdrawStep("form")} style={{ ...ghostBtn, padding: 10, fontSize: 13 }}>Annuler</button>
@@ -1185,13 +1187,13 @@ function AuthModal({ onClose, onAuthed }: { onClose: () => void; onAuthed: (toke
     setErr(null);
     setBusy(true);
     try {
-      if (mode === "register") {
-        const r = await api.post("/auth/register", { name, email, phone });
-        setInfo(r.simulated ? "Mode dev : le code est affiché dans les logs du serveur." : "Un code de vérification a été envoyé à votre e-mail.");
-      } else {
-        const r = await api.post("/auth/login", { email });
-        setInfo(r.simulated ? "Mode dev : le code est affiché dans les logs du serveur." : "Un code de connexion a été envoyé à votre e-mail.");
-      }
+      const r =
+        mode === "register"
+          ? await api.post("/auth/register", { name, email, phone })
+          : await api.post("/auth/login", { email });
+      const base = mode === "register" ? "Un code de vérification a été envoyé à votre e-mail." : "Un code de connexion a été envoyé à votre e-mail.";
+      // devCode is only present outside production (used by automated tests).
+      setInfo(r.devCode ? `${base} (code test : ${r.devCode})` : base);
       setStep("otp");
     } catch (e: any) {
       setErr(e.message);

@@ -1,0 +1,60 @@
+# Sungku preprod / production stack.
+# Postgres + API + Web. Set secrets via a .env file next to this compose file
+# (see .env.example in apps/api for the variable names) or your orchestrator's
+# secret store — never commit real secrets.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sungku
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sungku}
+      POSTGRES_DB: sungku
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sungku"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./apps/api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # To use Postgres, set the Prisma datasource provider to "postgresql"
+      # in apps/api/prisma/schema.prisma and re-create migrations.
+      DATABASE_URL: postgresql://sungku:${POSTGRES_PASSWORD:-sungku}@db:5432/sungku
+      NODE_ENV: production
+      PORT: 4000
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:4000}
+      JWT_SECRET: ${JWT_SECRET}
+      OTP_TTL_MINUTES: "10"
+      CAMOO_BASE_URL: https://api.camoo.cm/v1/payment
+      CAMOO_API_KEY: ${CAMOO_API_KEY}
+      CAMOO_API_SECRET: ${CAMOO_API_SECRET}
+      CAMOO_CURRENCY: XAF
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM}
+    ports:
+      - "4000:4000"
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:4000}
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+volumes:
+  db_data:

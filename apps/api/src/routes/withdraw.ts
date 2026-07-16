@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
-import { issueOtp, consumeOtp, requireAuth, AuthedRequest } from "../auth";
+import { issueOtp, consumeOtp, requireAuth, AuthedRequest, devCode } from "../auth";
 import { sendOtpEmail } from "../mailer";
 
 export const withdrawRouter = Router();
@@ -14,8 +14,8 @@ withdrawRouter.post("/request", requireAuth, async (req: AuthedRequest, res) => 
   if (!user) return res.status(404).json({ error: "Utilisateur introuvable" });
 
   const code = await issueOtp(user.email, "withdraw", { amount: Number(amount), destination: destination || "wallet" });
-  const { simulated } = await sendOtpEmail(user.email, code, "withdraw");
-  res.json({ otpSent: true, simulated, needsConfirmation: true });
+  void sendOtpEmail(user.email, code, "withdraw"); // fire-and-forget (non-blocking)
+  res.json({ otpSent: true, needsConfirmation: true, devCode: devCode(code) });
 });
 
 // Step 2: confirm with the distinct OTP.

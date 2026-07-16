@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
-import { issueOtp, consumeOtp, signToken, requireAuth, AuthedRequest } from "../auth";
+import { issueOtp, consumeOtp, signToken, requireAuth, AuthedRequest, devCode } from "../auth";
 import { sendOtpEmail } from "../mailer";
 
 export const authRouter = Router();
@@ -22,8 +22,8 @@ authRouter.post("/register", async (req, res) => {
   }
 
   const code = await issueOtp(normalized, "register_verify");
-  const { simulated } = await sendOtpEmail(normalized, code, "register_verify");
-  res.status(201).json({ email: normalized, otpSent: true, simulated });
+  void sendOtpEmail(normalized, code, "register_verify"); // fire-and-forget (non-blocking)
+  res.status(201).json({ email: normalized, otpSent: true, devCode: devCode(code) });
 });
 
 // Verify registration OTP → mark verified, return session token.
@@ -51,8 +51,8 @@ authRouter.post("/login", async (req, res) => {
   const user = await prisma.user.findUnique({ where: { email: normalized } });
   if (!user) return res.status(404).json({ error: "Aucun compte pour cet e-mail" });
   const code = await issueOtp(normalized, "login");
-  const { simulated } = await sendOtpEmail(normalized, code, "login");
-  res.json({ email: normalized, otpSent: true, simulated });
+  void sendOtpEmail(normalized, code, "login"); // fire-and-forget (non-blocking)
+  res.json({ email: normalized, otpSent: true, devCode: devCode(code) });
 });
 
 // Verify login OTP → session token.

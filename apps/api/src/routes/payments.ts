@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
 import { verifyWebhookSignature, normalizeStatus, account, camooConfigured } from "../camoo";
+import { notifyContribution } from "../notifications";
 
 export const paymentsRouter = Router();
 
@@ -39,6 +40,7 @@ paymentsRouter.get("/webhooks/camoo", async (req, res) => {
       where: { id: contribution.id },
       data: { status, providerTxId: contribution.providerTxId || paymentId || null },
     });
+    if (status === "CONFIRMED") await notifyContribution(contribution.id);
   }
 
   res.status(200).json({ received: true, matched: true });

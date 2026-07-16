@@ -42,6 +42,11 @@ export async function consumeOtp(email: string, purpose: string, code: string): 
   return token.meta ? JSON.parse(token.meta) : null;
 }
 
+// In non-production, expose the OTP so automated tests can complete the flow.
+export function devCode(code: string): string | undefined {
+  return process.env.NODE_ENV !== "production" ? code : undefined;
+}
+
 export function signToken(userId: string): string {
   return jwt.sign({ sub: userId }, JWT_SECRET, { expiresIn: "7d" });
 }
