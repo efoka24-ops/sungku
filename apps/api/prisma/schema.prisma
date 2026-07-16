@@ -26,8 +26,64 @@ model Campaign {
   visibility    String   @default("PUBLIQUE")
   isTontine     Boolean  @default(false)
   qrCodeDataUrl String?
+  organizerId   String?
+  organizer     User?    @relation(fields: [organizerId], references: [id])
   createdAt     DateTime @default(now())
   contributions Contribution[]
+}
+
+// Organizer account (role 3)
+// kycStatus: NONE | LIGHT | PENDING_DOC | VERIFIED
+model User {
+  id             String     @id @default(uuid())
+  name           String
+  email          String     @unique
+  phone          String?
+  emailVerified  Boolean    @default(false)
+  kycStatus      String     @default("NONE")
+  kycIdNumber    String?
+  withdrawMethod String?    // wallet | mobile_money
+  withdrawPhone  String?
+  createdAt      DateTime   @default(now())
+  campaigns      Campaign[]
+}
+
+// Short-lived email OTP codes
+// purpose: register_verify | login | withdraw
+model OtpToken {
+  id        String   @id @default(uuid())
+  email     String
+  codeHash  String
+  purpose   String
+  meta      String?  // e.g. withdraw amount/destination as JSON
+  expiresAt DateTime
+  consumed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// Partner / third-party developer account (role 4)
+// status: PENDING | APPROVED | REJECTED
+model Partner {
+  id           String   @id @default(uuid())
+  orgName      String
+  contactName  String
+  contactEmail String   @unique
+  status       String   @default("PENDING")
+  createdAt    DateTime @default(now())
+  apiKeys      ApiKey[]
+}
+
+// env: sandbox | production ; scopes: csv of read|campaigns:create|contributions:create|withdraw
+model ApiKey {
+  id         String   @id @default(uuid())
+  partnerId  String
+  partner    Partner  @relation(fields: [partnerId], references: [id])
+  env        String
+  keyId      String   @unique
+  secretHash String
+  scopes     String
+  revoked    Boolean  @default(false)
+  createdAt  DateTime @default(now())
 }
 
 model Contribution {

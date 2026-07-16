@@ -1,6 +1,7 @@
 import { Router } from "express";
 import QRCode from "qrcode";
 import { prisma } from "../prisma";
+import { requireAuth, AuthedRequest } from "../auth";
 
 export const campaignsRouter = Router();
 
@@ -40,7 +41,7 @@ campaignsRouter.get("/", async (req, res) => {
   );
 });
 
-campaignsRouter.post("/", async (req, res) => {
+campaignsRouter.post("/", requireAuth, async (req: AuthedRequest, res) => {
   const { title, description, category, targetAmount, deadline, coverImage, beneficiary, visibility, isTontine } =
     req.body;
 
@@ -67,6 +68,7 @@ campaignsRouter.post("/", async (req, res) => {
       visibility: visibility === "PRIVEE" ? "PRIVEE" : "PUBLIQUE",
       isTontine: Boolean(isTontine),
       qrCodeDataUrl,
+      organizerId: req.userId || null,
     },
   });
 

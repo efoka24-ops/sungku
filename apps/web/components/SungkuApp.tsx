@@ -52,6 +52,7 @@ interface Campaign {
   daysLeft: number;
   desc: string;
   live?: boolean;
+  image?: string;
   wall: { name: string; amount: string; method: string; msg: string; time: string }[];
 }
 
@@ -74,6 +75,7 @@ function mapCampaign(r: any): Campaign {
     daysLeft,
     desc: r.description,
     live: true,
+    image: r.coverImage || undefined,
     wall: [],
   };
 }
@@ -107,7 +109,26 @@ const api = {
     if (!res.ok) throw new Error("contribute failed");
     return res.json();
   },
+  // ── auth / accounts ──
+  post: (path: string, body: any, token?: string) =>
+    req("POST", path, body, token),
+  get: (path: string, token?: string) => req("GET", path, undefined, token),
 };
+
+async function req(method: string, path: string, body?: any, token?: string) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+    cache: "no-store",
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Erreur (${res.status})`);
+  return data;
+}
 
 // ─── Demo data (shown alongside live campaigns) ───────────────────────────────
 
@@ -178,7 +199,10 @@ function Gauge({ raised, goal, height = 10 }: { raised: number; goal: number; he
   );
 }
 
-function ImgSlot({ h, label: text }: { h: number; label: string }) {
+function ImgSlot({ h, label: text, src }: { h: number; label: string; src?: string }) {
+  if (src) {
+    return <img src={src} alt={text} style={{ height: h, width: "100%", objectFit: "cover", display: "block" }} />;
+  }
   return (
     <div style={{ height: h, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg,rgba(101,77,223,0.35),rgba(101,77,223,0.08))", color: "rgba(255,255,255,0.4)", fontSize: 13 }}>
       {text}
@@ -186,11 +210,24 @@ function ImgSlot({ h, label: text }: { h: number; label: string }) {
   );
 }
 
-type View = "home" | "campaign" | "create" | "dashboard" | "dev";
+type View = "home" | "campaign" | "create" | "dashboard" | "dev" | "how" | "help" | "report" | "cobac" | "press" | "contact";
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  emailVerified: boolean;
+  kycStatus: string;
+  withdrawMethod?: string;
+  withdrawPhone?: string;
+}
 
 export default function SungkuApp() {
   const [view, setView] = useState<View>("home");
   const [live, setLive] = useState<Campaign[]>([]);
+  const [token, setToken] = useState<string | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
 
   async function refresh() {
     try {
@@ -201,7 +238,28 @@ export default function SungkuApp() {
   }
   useEffect(() => {
     refresh();
+    const saved = typeof window !== "undefined" ? localStorage.getItem("sungku_token") : null;
+    if (saved) {
+      setToken(saved);
+      api.get("/auth/me", saved).then(setUser).catch(() => {
+        localStorage.removeItem("sungku_token");
+        setToken(null);
+      });
+    }
   }, []);
+
+  function onAuthed(tok: string, u: AuthUser) {
+    localStorage.setItem("sungku_token", tok);
+    setToken(tok);
+    setUser(u);
+    setAuthOpen(false);
+  }
+  function logout() {
+    localStorage.removeItem("sungku_token");
+    setToken(null);
+    setUser(null);
+    setView("home");
+  }
 
   const campaigns = [...live, ...DEMO_CAMPAIGNS];
 
@@ -241,17 +299,26 @@ export default function SungkuApp() {
             <button onClick={() => setView("dashboard")} style={navBtn("dashboard")}>Tableau de bord</button>
             <button onClick={() => setView("dev")} style={navBtn("dev")}>Développeurs</button>
           </div>
-          <button style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.25)", padding: "10px 20px", borderRadius: 999, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Se connecter</button>
+          {user ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 13, color: "rgba(255,255,255,0.7)" }}>{user.name.split(" ")[0]}</span>
+              <button onClick={logout} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.25)", padding: "10px 18px", borderRadius: 999, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Déconnexion</button>
+            </div>
+          ) : (
+            <button onClick={() => setAuthOpen(true)} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.25)", padding: "10px 20px", borderRadius: 999, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Se connecter</button>
+          )}
         </div>
       </div>
 
       {view === "home" && <Home campaigns={campaigns} onOpen={openCampaign} onCreate={() => setView("create")} />}
       {view === "campaign" && selected && <CampaignView campaign={selected} onBack={() => setView("home")} onContributed={refresh} />}
-      {view === "create" && <Create onDone={refresh} goDashboard={() => setView("dashboard")} />}
-      {view === "dashboard" && <Dashboard campaign={selected ?? campaigns[0]} />}
+      {view === "create" && <Create user={user} token={token} onRequireAuth={() => setAuthOpen(true)} onDone={refresh} goDashboard={() => setView("dashboard")} />}
+      {(view === "how" || view === "help" || view === "report" || view === "cobac" || view === "press" || view === "contact") && <InfoPage page={view} onNav={setView} />}
+      {view === "dashboard" && <Dashboard campaign={selected ?? campaigns[0]} user={user} token={token} onUser={setUser} onRequireAuth={() => setAuthOpen(true)} />}
       {view === "dev" && <DevPortal />}
 
       <Footer onNav={setView} />
+      {authOpen && <AuthModal onClose={() => setAuthOpen(false)} onAuthed={onAuthed} />}
     </div>
   );
 }
@@ -265,11 +332,17 @@ function Footer({ onNav }: { onNav: (v: View) => void }) {
   const platform = [
     { label: "Explorer les campagnes", onClick: () => onNav("home") },
     { label: "Créer une cagnotte", onClick: () => onNav("create") },
-    { label: "Comment ça marche", onClick: () => onNav("home") },
+    { label: "Comment ça marche", onClick: () => onNav("how") },
     { label: "Catégories", onClick: () => onNav("home") },
     { label: "Campagnes urgentes", onClick: () => onNav("home") },
   ];
-  const support = ["Centre d'aide", "Signaler une campagne", "Conformité COBAC", "Presse & médias", "Nous contacter"];
+  const support: { label: string; onClick: () => void }[] = [
+    { label: "Centre d'aide", onClick: () => onNav("help") },
+    { label: "Signaler une campagne", onClick: () => onNav("report") },
+    { label: "Conformité COBAC", onClick: () => onNav("cobac") },
+    { label: "Presse & médias", onClick: () => onNav("press") },
+    { label: "Nous contacter", onClick: () => onNav("contact") },
+  ];
 
   return (
     <footer style={{ borderTop: BORDER, marginTop: 40 }}>
@@ -282,7 +355,7 @@ function Footer({ onNav }: { onNav: (v: View) => void }) {
             <span style={{ fontSize: 17, fontWeight: 800 }}>Sungku</span>
           </div>
           <p style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", lineHeight: 1.6, margin: 0, maxWidth: 240 }}>
-            La plateforme de collecte de fonds camerounaise — Mobile Money, NFC, QR code et carte, depuis le Cameroun ou la diaspora.
+            La plateforme de collecte de fonds camerounaise. Mobile Money, NFC, QR code et carte, depuis le Cameroun ou la diaspora.
           </p>
         </div>
 
@@ -299,7 +372,7 @@ function Footer({ onNav }: { onNav: (v: View) => void }) {
           <p style={colTitle}>Support</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {support.map((l) => (
-              <button key={l} style={linkStyle}>{l}</button>
+              <button key={l.label} onClick={l.onClick} style={linkStyle}>{l.label}</button>
             ))}
           </div>
         </div>
@@ -332,7 +405,7 @@ function Home({ campaigns, onOpen, onCreate }: { campaigns: Campaign[]; onOpen: 
         </div>
         <h1 style={{ fontSize: 52, fontWeight: 800, lineHeight: 1.06, margin: "0 0 20px", maxWidth: 760, letterSpacing: "-0.02em" }}>Financez ce qui compte, ensemble.</h1>
         <p style={{ fontSize: 18, color: "rgba(255,255,255,0.62)", maxWidth: 580, margin: "0 0 32px", lineHeight: 1.55 }}>
-          Créez ou soutenez une campagne — santé, funérailles, projets communautaires, éducation ou tontine — en Mobile Money, tap NFC, QR code ou carte, depuis le Cameroun ou la diaspora.
+          Créez ou soutenez une campagne (santé, funérailles, projets communautaires, éducation ou tontine) et contribuez en Mobile Money, tap NFC, QR code ou carte, depuis le Cameroun ou la diaspora.
         </p>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher une campagne, une ville, une cause…" style={{ flex: 1, minWidth: 260, background: CARD, border: "1px solid rgba(255,255,255,0.12)", color: "#fff", padding: "14px 20px", borderRadius: 999, fontSize: 15 }} />
@@ -354,7 +427,7 @@ function Home({ campaigns, onOpen, onCreate }: { campaigns: Campaign[]; onOpen: 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 24 }}>
         {filtered.map((c) => (
           <div key={c.id} onClick={() => onOpen(c)} style={{ cursor: "pointer", ...card, overflow: "hidden" }}>
-            <ImgSlot h={160} label="Photo de la campagne" />
+            <ImgSlot h={160} label="Photo de la campagne" src={c.image} />
             <div style={{ padding: 20 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
                 <span style={catBadge}>{c.category}</span>
@@ -444,7 +517,7 @@ function CampaignView({ campaign, onBack, onContributed }: { campaign: Campaign;
       <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 40, alignItems: "start" }}>
         <div>
           <div style={{ borderRadius: 20, overflow: "hidden", marginBottom: 24 }}>
-            <ImgSlot h={380} label="Photo principale de la campagne" />
+            <ImgSlot h={380} label="Photo principale de la campagne" src={campaign.image} />
           </div>
           <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
             <span style={catBadge}>{campaign.category}</span>
@@ -526,35 +599,53 @@ function CampaignView({ campaign, onBack, onContributed }: { campaign: Campaign;
 
 // ─── Create ───────────────────────────────────────────────────────────────────
 
-function Create({ onDone, goDashboard }: { onDone: () => void; goDashboard: () => void }) {
+function Create({ user, token, onRequireAuth, onDone, goDashboard }: { user: AuthUser | null; token: string | null; onRequireAuth: () => void; onDone: () => void; goDashboard: () => void }) {
   const [form, setForm] = useState({ title: "", description: "", category: "Santé", goal: "", deadline: "", beneficiary: "", visibility: "Publique", isTontine: false });
   const [contributorRows, setContributorRows] = useState<string[]>([""]);
+  const [coverImage, setCoverImage] = useState<string>("");
   const [created, setCreated] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
   const goalNum = parseInt(String(form.goal).replace(/\s/g, "")) || 0;
 
+  function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 3 * 1024 * 1024) {
+      setErr("Image trop lourde (max 3 Mo).");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setCoverImage(String(reader.result));
+    reader.readAsDataURL(file);
+  }
+
   async function submit() {
     setErr(null);
     if (!form.title || !form.description || !goalNum || !form.beneficiary) {
-      setErr("Titre, description, montant cible et bénéficiaire sont requis.");
+      setErr("Le titre, la description, le montant cible et le bénéficiaire sont requis.");
       return;
     }
     try {
-      await api.create({
-        title: form.title,
-        description: form.description,
-        category: CAT_LABEL_TO_ENUM[form.category] ?? "PROJET_COMMUNAUTAIRE",
-        targetAmount: goalNum,
-        deadline: form.deadline || undefined,
-        beneficiary: form.beneficiary,
-        visibility: form.visibility === "Privée" ? "PRIVEE" : "PUBLIQUE",
-        isTontine: form.isTontine,
-      });
+      await api.post(
+        "/campaigns",
+        {
+          title: form.title,
+          description: form.description,
+          category: CAT_LABEL_TO_ENUM[form.category] ?? "PROJET_COMMUNAUTAIRE",
+          targetAmount: goalNum,
+          deadline: form.deadline || undefined,
+          beneficiary: form.beneficiary,
+          visibility: form.visibility === "Privée" ? "PRIVEE" : "PUBLIQUE",
+          isTontine: form.isTontine,
+          coverImage: coverImage || undefined,
+        },
+        token || undefined
+      );
       onDone();
       setCreated(true);
-    } catch {
-      setErr("Impossible de créer la campagne — vérifiez que l'API est démarrée.");
+    } catch (e: any) {
+      setErr(e.message || "Impossible de créer la campagne. Vérifiez que le service est démarré.");
     }
   }
 
@@ -569,6 +660,19 @@ function Create({ onDone, goDashboard }: { onDone: () => void; goDashboard: () =
     fontWeight: 600,
     cursor: "pointer",
   });
+
+  // A campaign can only be created from an organizer account.
+  if (!user) {
+    return (
+      <div style={{ maxWidth: 560, margin: "0 auto", padding: "80px 32px", textAlign: "center" }}>
+        <h1 style={{ fontSize: 30, fontWeight: 800, margin: "0 0 12px" }}>Créer une campagne</h1>
+        <p style={{ fontSize: 15, color: "rgba(255,255,255,0.55)", margin: "0 0 28px" }}>
+          La création d'une campagne nécessite un compte organisateur. Créez votre compte (vérification par code e-mail) pour continuer.
+        </p>
+        <button onClick={onRequireAuth} style={{ ...violetBtn, padding: "14px 26px", fontSize: 15 }}>Se connecter ou créer un compte</button>
+      </div>
+    );
+  }
 
   return (
     <div style={{ maxWidth: 1080, margin: "0 auto", padding: "56px 32px 80px" }}>
@@ -628,7 +732,16 @@ function Create({ onDone, goDashboard }: { onDone: () => void; goDashboard: () =
             </div>
             <div>
               <label style={label}>Image de couverture</label>
-              <div style={{ borderRadius: 16, overflow: "hidden" }}><ImgSlot h={180} label="Ajouter une image" /></div>
+              <label style={{ display: "block", borderRadius: 16, overflow: "hidden", cursor: "pointer", border: "1px dashed rgba(255,255,255,0.2)" }}>
+                <input type="file" accept="image/*" onChange={onPickImage} style={{ display: "none" }} />
+                {coverImage ? (
+                  <img src={coverImage} alt="Aperçu" style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
+                ) : (
+                  <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.4)", fontSize: 13, background: "linear-gradient(135deg,rgba(101,77,223,0.35),rgba(101,77,223,0.08))" }}>
+                    Cliquer pour ajouter une image (max 3 Mo)
+                  </div>
+                )}
+              </label>
             </div>
             <div>
               <label style={label}>Visibilité</label>
@@ -675,20 +788,94 @@ function Create({ onDone, goDashboard }: { onDone: () => void; goDashboard: () =
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-function Dashboard({ campaign }: { campaign: Campaign }) {
+function Dashboard({ campaign, user, token, onUser, onRequireAuth }: { campaign: Campaign; user: AuthUser | null; token: string | null; onUser: (u: AuthUser) => void; onRequireAuth: () => void }) {
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawDest, setWithdrawDest] = useState("mobile_money");
-  const [requested, setRequested] = useState(false);
+  const [withdrawStep, setWithdrawStep] = useState<"form" | "otp" | "done">("form");
+  const [withdrawCode, setWithdrawCode] = useState("");
+  const [withdrawMsg, setWithdrawMsg] = useState<string | null>(null);
+  const [withdrawErr, setWithdrawErr] = useState<string | null>(null);
+  // KYC
+  const [kycId, setKycId] = useState("");
+  const [kycMethod, setKycMethod] = useState("mobile_money");
+  const [kycPhone, setKycPhone] = useState("");
+  const [kycErr, setKycErr] = useState<string | null>(null);
   const [queue, setQueue] = useState([
-    { title: "Aide médicale urgente — Bertoua", reason: "Catégorie sensible (santé)", status: "En attente" },
-    { title: "Collecte funérailles — Ebolowa", reason: "Signalement utilisateur", status: "En attente" },
+    { title: "Aide médicale urgente à Bertoua", reason: "Catégorie sensible (santé)", status: "En attente" },
+    { title: "Collecte funérailles à Ebolowa", reason: "Signalement utilisateur", status: "En attente" },
   ]);
+
+  const kycVerified = user?.kycStatus === "VERIFIED";
+
+  async function submitKyc() {
+    if (!token) return;
+    setKycErr(null);
+    try {
+      const u = await api.post("/auth/kyc", { idNumber: kycId, withdrawMethod: kycMethod, withdrawPhone: kycPhone }, token);
+      onUser(u);
+    } catch (e: any) {
+      setKycErr(e.message);
+    }
+  }
+
+  async function requestWithdraw() {
+    setWithdrawErr(null);
+    if (!token) return onRequireAuth();
+    try {
+      await api.post("/withdraw/request", { amount: Number(withdrawAmount.replace(/\s/g, "")), destination: withdrawDest }, token);
+      setWithdrawStep("otp");
+    } catch (e: any) {
+      setWithdrawErr(e.message);
+    }
+  }
+  async function confirmWithdraw() {
+    setWithdrawErr(null);
+    try {
+      const r = await api.post("/withdraw/confirm", { code: withdrawCode }, token || undefined);
+      setWithdrawMsg(r.message);
+      setWithdrawStep("done");
+    } catch (e: any) {
+      setWithdrawErr(e.message);
+    }
+  }
+
+  // Gate: organizer dashboard requires an authenticated account (role 3).
+  if (!user) {
+    return (
+      <div style={{ maxWidth: 560, margin: "0 auto", padding: "80px 32px", textAlign: "center" }}>
+        <h1 style={{ fontSize: 30, fontWeight: 800, margin: "0 0 12px" }}>Espace organisateur</h1>
+        <p style={{ fontSize: 15, color: "rgba(255,255,255,0.55)", margin: "0 0 28px" }}>
+          Connectez-vous ou créez un compte organisateur (vérification par code e-mail) pour accéder au tableau de bord, aux retraits et à la modération.
+        </p>
+        <button onClick={onRequireAuth} style={{ ...violetBtn, padding: "14px 26px", fontSize: 15 }}>Se connecter / Créer un compte</button>
+      </div>
+    );
+  }
 
   return (
     <div style={{ maxWidth: 1280, margin: "0 auto", padding: "56px 32px 80px" }}>
       <h1 style={{ fontSize: 36, fontWeight: 800, margin: "0 0 8px" }}>Tableau de bord organisateur</h1>
-      <p style={{ fontSize: 16, color: "rgba(255,255,255,0.55)", margin: "0 0 36px" }}>{campaign.title}</p>
+      <p style={{ fontSize: 16, color: "rgba(255,255,255,0.55)", margin: "0 0 24px" }}>{campaign.title} · {user.name}</p>
+
+      {/* KYC status banner */}
+      <div style={{ ...card, borderRadius: 16, padding: "16px 20px", marginBottom: 24, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 14, color: "rgba(255,255,255,0.75)" }}>
+          Vérification d'identité (KYC) : <strong style={{ color: kycVerified ? "#2ECC71" : "#F39C12" }}>{kycVerified ? "Vérifié" : user.kycStatus === "LIGHT" ? "Allégé" : "À compléter"}</strong>
+        </span>
+        {!kycVerified && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input value={kycId} onChange={(e) => setKycId(e.target.value)} placeholder="N° pièce d'identité (CNI)" style={{ background: "#000", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", padding: "10px 14px", borderRadius: 10, fontSize: 13 }} />
+            <select value={kycMethod} onChange={(e) => setKycMethod(e.target.value)} style={{ background: "#000", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", padding: "10px 14px", borderRadius: 10, fontSize: 13 }}>
+              <option value="mobile_money">Retrait : Mobile Money</option>
+              <option value="wallet">Retrait : Portefeuille Sungku</option>
+            </select>
+            <input value={kycPhone} onChange={(e) => setKycPhone(e.target.value)} placeholder="Téléphone retrait" style={{ background: "#000", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", padding: "10px 14px", borderRadius: 10, fontSize: 13 }} />
+            <button onClick={submitKyc} style={{ ...violetBtn, padding: "10px 18px", fontSize: 13 }}>Valider le KYC</button>
+          </div>
+        )}
+      </div>
+      {kycErr && <p style={{ color: "#E74C3C", fontSize: 13, marginTop: -12, marginBottom: 16 }}>{kycErr}</p>}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 16, marginBottom: 36 }}>
         {[
@@ -725,8 +912,17 @@ function Dashboard({ campaign }: { campaign: Campaign }) {
 
         <div style={{ ...card, padding: 24 }}>
           <h3 style={{ fontSize: 17, fontWeight: 700, margin: "0 0 18px" }}>Retrait des fonds</h3>
-          {requested ? (
-            <p style={{ fontSize: 14, color: "rgba(255,255,255,0.65)" }}>Demande de retrait de {withdrawAmount} {CURRENCY} envoyée. Traitement sous 24h.</p>
+          {!kycVerified ? (
+            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)" }}>Complétez la vérification d'identité (KYC) ci-dessus pour activer les retraits.</p>
+          ) : withdrawStep === "done" ? (
+            <p style={{ fontSize: 14, color: "#2ECC71" }}>{withdrawMsg}</p>
+          ) : withdrawStep === "otp" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <p style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", margin: 0 }}>Un code de confirmation distinct a été envoyé à votre e-mail (double validation).</p>
+              <input value={withdrawCode} onChange={(e) => setWithdrawCode(e.target.value)} placeholder="Code de retrait" style={{ boxSizing: "border-box", background: "#000", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", padding: "12px 14px", borderRadius: 10, fontSize: 14, letterSpacing: 4 }} />
+              <button onClick={confirmWithdraw} style={{ ...violetBtn, padding: 12, fontSize: 14 }}>Confirmer le retrait</button>
+              <button onClick={() => setWithdrawStep("form")} style={{ ...ghostBtn, padding: 10, fontSize: 13 }}>Annuler</button>
+            </div>
           ) : (
             <>
               {showWithdraw && (
@@ -736,12 +932,13 @@ function Dashboard({ campaign }: { campaign: Campaign }) {
                     <option value="mobile_money">Mobile Money</option>
                     <option value="wallet">Portefeuille Sungku</option>
                   </select>
-                  <button onClick={() => setRequested(true)} style={{ ...violetBtn, padding: 12, fontSize: 14 }}>Confirmer le retrait</button>
+                  <button onClick={requestWithdraw} style={{ ...violetBtn, padding: 12, fontSize: 14 }}>Demander le code de confirmation</button>
                 </div>
               )}
               <button onClick={() => setShowWithdraw((s) => !s)} style={{ width: "100%", boxSizing: "border-box", ...ghostBtn, padding: 12, fontSize: 14 }}>{showWithdraw ? "Annuler" : "Demander un retrait"}</button>
             </>
           )}
+          {withdrawErr && <p style={{ color: "#E74C3C", fontSize: 13, marginTop: 10 }}>{withdrawErr}</p>}
 
           <h3 style={{ fontSize: 17, fontWeight: 700, margin: "28px 0 14px" }}>Modération (back-office)</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -765,11 +962,40 @@ function Dashboard({ campaign }: { campaign: Campaign }) {
 
 // ─── Developer portal ─────────────────────────────────────────────────────────
 
+const ALL_SCOPES = ["read", "campaigns:create", "contributions:create", "withdraw"];
+
 function DevPortal() {
-  const [env, setEnv] = useState("Sandbox");
   const [sel, setSel] = useState(0);
   const endpoint = ENDPOINTS[sel];
-  const apiKey = env === "Sandbox" ? "sk_sandbox_8f21a…4c7d" : "sk_live_a93f…21bc";
+
+  // Partner account state
+  const [partner, setPartner] = useState<any>(null);
+  const [reg, setReg] = useState({ orgName: "", contactName: "", contactEmail: "" });
+  const [regErr, setRegErr] = useState<string | null>(null);
+  const [scopes, setScopes] = useState<string[]>(["read"]);
+  const [generatedKey, setGeneratedKey] = useState<{ keyId: string; secret: string; env: string } | null>(null);
+  const [keyErr, setKeyErr] = useState<string | null>(null);
+
+  async function registerPartner() {
+    setRegErr(null);
+    try {
+      setPartner(await api.post("/partners/register", reg));
+    } catch (e: any) {
+      setRegErr(e.message);
+    }
+  }
+  async function generateKey(env: "sandbox" | "production") {
+    setKeyErr(null);
+    try {
+      setGeneratedKey(await api.post(`/partners/${partner.id}/api-keys`, { env, scopes }));
+      setPartner(await api.get(`/partners/${partner.id}`));
+    } catch (e: any) {
+      setKeyErr(e.message);
+    }
+  }
+  function toggleScope(s: string) {
+    setScopes((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]));
+  }
 
   const badge = (m: string, lg = false): CSSProperties => {
     const colors: Record<string, string> = { GET: "#2ECC71", POST: VIOLET, WEBHOOK: "#F39C12" };
@@ -781,14 +1007,51 @@ function DevPortal() {
       <h1 style={{ fontSize: 36, fontWeight: 800, margin: "0 0 8px" }}>Portail développeur</h1>
       <p style={{ fontSize: 16, color: "rgba(255,255,255,0.55)", margin: "0 0 28px" }}>Intégrez la collecte de fonds Sungku dans votre propre plateforme.</p>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 32, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", gap: 8 }}>
-          {["Sandbox", "Production"].map((e) => (
-            <button key={e} onClick={() => setEnv(e)} style={{ ...smBtn(env === e), padding: "10px 16px", borderRadius: 999 }}>{e}</button>
-          ))}
-        </div>
-        <span style={{ background: CARD, border: "1px solid rgba(255,255,255,0.1)", padding: "10px 16px", borderRadius: 10, fontFamily: "monospace", fontSize: 13, color: "rgba(255,255,255,0.7)" }}>{apiKey}</span>
-        <button style={{ ...ghostBtn, padding: "9px 16px", fontSize: 13 }}>Régénérer</button>
+      {/* Partner account + API keys */}
+      <div style={{ ...card, padding: 24, marginBottom: 40 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 800, margin: "0 0 16px" }}>Compte partenaire</h2>
+        {!partner ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 12, alignItems: "end" }}>
+            <div><label style={label}>Organisation</label><input value={reg.orgName} onChange={(e) => setReg({ ...reg, orgName: e.target.value })} placeholder="Nom de l'organisation" style={field} /></div>
+            <div><label style={label}>Contact technique</label><input value={reg.contactName} onChange={(e) => setReg({ ...reg, contactName: e.target.value })} placeholder="Nom du contact" style={field} /></div>
+            <div><label style={label}>E-mail</label><input value={reg.contactEmail} onChange={(e) => setReg({ ...reg, contactEmail: e.target.value })} placeholder="contact@org.cm" style={field} /></div>
+            <button onClick={registerPartner} style={{ ...violetBtn, padding: 14, fontSize: 14 }}>Créer le compte partenaire</button>
+          </div>
+        ) : (
+          <div>
+            <p style={{ fontSize: 14, color: "rgba(255,255,255,0.7)", margin: "0 0 16px" }}>
+              {partner.orgName} · Statut : <strong style={{ color: partner.status === "APPROVED" ? "#2ECC71" : "#F39C12" }}>{partner.status === "APPROVED" ? "Validé" : "En attente de validation"}</strong>
+              {partner.status !== "APPROVED" && <span style={{ color: "rgba(255,255,255,0.45)" }}> (clés sandbox disponibles ; production après validation back office)</span>}
+            </p>
+            <p style={{ ...label, marginBottom: 10 }}>Scopes accordés</p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+              {ALL_SCOPES.map((s) => (
+                <button key={s} onClick={() => toggleScope(s)} style={{ ...smBtn(scopes.includes(s)), padding: "8px 14px", borderRadius: 999, fontFamily: "monospace" }}>{s}</button>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button onClick={() => generateKey("sandbox")} style={{ ...violetBtn, padding: "12px 18px", fontSize: 13 }}>Générer une clé sandbox</button>
+              <button onClick={() => generateKey("production")} style={{ ...ghostBtn, padding: "12px 18px", fontSize: 13 }}>Générer une clé production</button>
+            </div>
+            {keyErr && <p style={{ color: "#E74C3C", fontSize: 13, marginTop: 10 }}>{keyErr}</p>}
+            {generatedKey && (
+              <div style={{ background: "#000", border: "1px solid rgba(101,77,223,0.4)", borderRadius: 12, padding: 16, marginTop: 16 }}>
+                <p style={{ fontSize: 12, color: "#F39C12", margin: "0 0 8px" }}>Copiez le secret maintenant, il ne sera plus affiché.</p>
+                <p style={{ fontFamily: "monospace", fontSize: 13, margin: "0 0 4px" }}>X-Api-Key : {generatedKey.keyId}</p>
+                <p style={{ fontFamily: "monospace", fontSize: 13, margin: 0, wordBreak: "break-all" }}>X-Api-Secret : {generatedKey.secret}</p>
+              </div>
+            )}
+            {partner.apiKeys && partner.apiKeys.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <p style={{ ...label, marginBottom: 8 }}>Clés existantes</p>
+                {partner.apiKeys.map((k: any) => (
+                  <p key={k.id} style={{ fontFamily: "monospace", fontSize: 12, color: "rgba(255,255,255,0.6)", margin: "0 0 4px" }}>{k.keyId} · {k.env} · [{k.scopes}]{k.revoked ? " · révoquée" : ""}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {regErr && <p style={{ color: "#E74C3C", fontSize: 13, marginTop: 10 }}>{regErr}</p>}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 24, alignItems: "start", marginBottom: 56 }}>
@@ -838,6 +1101,178 @@ function DevPortal() {
       <p style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", maxWidth: 760, lineHeight: 1.6 }}>
         Sécurité : OAuth 2.0 ou clé API + secret, scopes par partenaire, signature HMAC sur chaque webhook, limitation de débit, cloisonnement sandbox/production et journalisation complète (conformité BEAC/COBAC).
       </p>
+    </div>
+  );
+}
+
+// ─── Info pages (footer) ──────────────────────────────────────────────────────
+
+const INFO_CONTENT: Record<string, { title: string; intro: string; sections: { h: string; p: string }[]; cta?: { label: string; to: View } }> = {
+  how: {
+    title: "Comment ça marche",
+    intro: "Collecter ou soutenir une cause sur Sungku prend quelques minutes.",
+    sections: [
+      { h: "1. Créez votre compte", p: "Inscrivez vous avec votre nom et votre e-mail. Un code de vérification vous est envoyé par e-mail pour valider votre compte." },
+      { h: "2. Lancez votre campagne", p: "Renseignez le titre, la description, la catégorie, le montant cible, l'échéance et une image de couverture. Un lien de partage, un QR code et un code USSD sont générés automatiquement." },
+      { h: "3. Partagez et collectez", p: "Diffusez votre campagne sur WhatsApp et les réseaux sociaux. Vos contributeurs paient en Mobile Money, carte bancaire, tap NFC ou QR code, depuis le Cameroun ou la diaspora." },
+      { h: "4. Retirez vos fonds", p: "Suivez vos contributions en temps réel sur le tableau de bord, puis demandez un retrait vers votre portefeuille Sungku ou votre compte Mobile Money, avec une double validation par code." },
+    ],
+    cta: { label: "Créer une campagne", to: "create" },
+  },
+  help: {
+    title: "Centre d'aide",
+    intro: "Les réponses aux questions les plus fréquentes sur Sungku.",
+    sections: [
+      { h: "Comment contribuer à une campagne ?", p: "Ouvrez la page de la campagne, choisissez un montant et un moyen de paiement (Mobile Money, carte, NFC ou QR code), puis validez. Vous recevez une confirmation immédiate." },
+      { h: "Comment sont sécurisés les paiements ?", p: "Les paiements sont traités par un prestataire agréé. Aucune donnée bancaire brute n'est stockée sur la plateforme et chaque transaction est journalisée." },
+      { h: "Quand puis je retirer les fonds ?", p: "Une fois votre identité vérifiée (KYC), vous pouvez demander un retrait à tout moment. Une double validation par code protège chaque demande." },
+      { h: "Que faire en cas de problème ?", p: "Utilisez la page Nous contacter ou signalez une campagne suspecte depuis sa page publique." },
+    ],
+  },
+  report: {
+    title: "Signaler une campagne",
+    intro: "Aidez nous à garder Sungku fiable en signalant tout contenu suspect.",
+    sections: [
+      { h: "Quand signaler ?", p: "Signalez une campagne si vous suspectez une fraude, une usurpation d'identité, un contenu trompeur ou une collecte pour une cause illégale." },
+      { h: "Que se passe t il ensuite ?", p: "Notre équipe de modération examine chaque signalement. Les campagnes des catégories sensibles (santé, funérailles) font l'objet d'une validation renforcée." },
+      { h: "Comment signaler ?", p: "Écrivez à moderation@sungku.cm en précisant le lien de la campagne et le motif du signalement." },
+    ],
+  },
+  cobac: {
+    title: "Conformité COBAC",
+    intro: "Sungku opère dans le respect de la réglementation financière de la zone CEMAC.",
+    sections: [
+      { h: "Cadre réglementaire", p: "La plateforme s'inscrit dans le cadre défini par la BEAC et la COBAC pour les services de paiement et les transferts, y compris transfrontaliers pour la diaspora." },
+      { h: "Vérification d'identité (KYC)", p: "Une vérification allégée est requise dès la création d'un compte organisateur, renforcée par pièce d'identité au delà d'un certain montant collecté ou pour les catégories sensibles." },
+      { h: "Traçabilité", p: "Chaque contribution et chaque retrait sont journalisés et exportables, pour assurer la transparence exigée des associations, écoles et églises." },
+    ],
+  },
+  press: {
+    title: "Presse et médias",
+    intro: "Ressources pour les journalistes et partenaires médias.",
+    sections: [
+      { h: "À propos de Sungku", p: "Sungku est une plateforme camerounaise de collecte de fonds qui permet à tous de créer et soutenir des campagnes en Mobile Money, carte, NFC et QR code." },
+      { h: "Kit média", p: "Logos, visuels et éléments de charte sont disponibles sur demande à presse@sungku.cm." },
+      { h: "Contact presse", p: "Pour toute demande d'interview ou d'information, écrivez à presse@sungku.cm." },
+    ],
+  },
+  contact: {
+    title: "Nous contacter",
+    intro: "Notre équipe est à votre écoute.",
+    sections: [
+      { h: "Support général", p: "support@sungku.cm" },
+      { h: "Modération et signalements", p: "moderation@sungku.cm" },
+      { h: "Partenariats et API", p: "partenaires@sungku.cm" },
+      { h: "Presse", p: "presse@sungku.cm" },
+    ],
+  },
+};
+
+// ─── Auth modal (register / login with email OTP) ─────────────────────────────
+
+function AuthModal({ onClose, onAuthed }: { onClose: () => void; onAuthed: (token: string, user: AuthUser) => void }) {
+  const [mode, setMode] = useState<"register" | "login">("register");
+  const [step, setStep] = useState<"form" | "otp">("form");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function sendForm() {
+    setErr(null);
+    setBusy(true);
+    try {
+      if (mode === "register") {
+        const r = await api.post("/auth/register", { name, email, phone });
+        setInfo(r.simulated ? "Mode dev : le code est affiché dans les logs du serveur." : "Un code de vérification a été envoyé à votre e-mail.");
+      } else {
+        const r = await api.post("/auth/login", { email });
+        setInfo(r.simulated ? "Mode dev : le code est affiché dans les logs du serveur." : "Un code de connexion a été envoyé à votre e-mail.");
+      }
+      setStep("otp");
+    } catch (e: any) {
+      setErr(e.message);
+    }
+    setBusy(false);
+  }
+
+  async function verify() {
+    setErr(null);
+    setBusy(true);
+    try {
+      const path = mode === "register" ? "/auth/verify-otp" : "/auth/login/verify";
+      const r = await api.post(path, { email, code });
+      onAuthed(r.token, r.user);
+    } catch (e: any) {
+      setErr(e.message);
+    }
+    setBusy(false);
+  }
+
+  const input: CSSProperties = { width: "100%", boxSizing: "border-box", background: "#000", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", padding: "13px 16px", borderRadius: 12, fontSize: 14, marginBottom: 12 };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ ...card, borderRadius: 24, padding: 32, width: 420, maxWidth: "100%" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>{mode === "register" ? "Créer un compte" : "Se connecter"}</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.5)", fontSize: 22, cursor: "pointer" }}>×</button>
+        </div>
+        <p style={{ fontSize: 14, color: "rgba(255,255,255,0.55)", margin: "0 0 22px" }}>
+          {step === "form" ? "Vérification par code envoyé sur votre e-mail." : `Saisissez le code envoyé à ${email}.`}
+        </p>
+
+        {step === "form" ? (
+          <>
+            {mode === "register" && <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom complet" style={input} />}
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Adresse e-mail" type="email" style={input} />
+            {mode === "register" && <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Téléphone (optionnel)" style={input} />}
+            <button onClick={sendForm} disabled={busy} style={{ ...violetBtn, width: "100%", padding: 15, fontSize: 15, marginTop: 4, opacity: busy ? 0.6 : 1 }}>{busy ? "Envoi…" : "Recevoir le code"}</button>
+          </>
+        ) : (
+          <>
+            <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Code à 6 chiffres" style={{ ...input, letterSpacing: 8, textAlign: "center", fontSize: 20 }} />
+            <button onClick={verify} disabled={busy} style={{ ...violetBtn, width: "100%", padding: 15, fontSize: 15, opacity: busy ? 0.6 : 1 }}>{busy ? "Vérification…" : "Valider"}</button>
+            <button onClick={() => { setStep("form"); setCode(""); setInfo(null); }} style={{ ...ghostBtn, width: "100%", boxSizing: "border-box", padding: 12, fontSize: 13, marginTop: 8 }}>Modifier l'e-mail</button>
+          </>
+        )}
+
+        {info && <p style={{ color: "#B4A8F5", fontSize: 13, marginTop: 14 }}>{info}</p>}
+        {err && <p style={{ color: "#E74C3C", fontSize: 13, marginTop: 14 }}>{err}</p>}
+
+        <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", textAlign: "center", marginTop: 20 }}>
+          {mode === "register" ? "Déjà un compte ?" : "Pas encore de compte ?"}{" "}
+          <button onClick={() => { setMode(mode === "register" ? "login" : "register"); setStep("form"); setErr(null); setInfo(null); }} style={{ background: "none", border: "none", color: "#B4A8F5", cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>
+            {mode === "register" ? "Se connecter" : "Créer un compte"}
+          </button>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function InfoPage({ page, onNav }: { page: View; onNav: (v: View) => void }) {
+  const c = INFO_CONTENT[page];
+  if (!c) return null;
+  return (
+    <div style={{ maxWidth: 820, margin: "0 auto", padding: "56px 32px 80px" }}>
+      <button onClick={() => onNav("home")} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.55)", fontSize: 14, cursor: "pointer", padding: 0, marginBottom: 24 }}>← Retour à l'accueil</button>
+      <h1 style={{ fontSize: 36, fontWeight: 800, margin: "0 0 10px" }}>{c.title}</h1>
+      <p style={{ fontSize: 17, color: "rgba(255,255,255,0.6)", margin: "0 0 36px" }}>{c.intro}</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {c.sections.map((s) => (
+          <div key={s.h} style={{ ...card, padding: 22 }}>
+            <h3 style={{ fontSize: 17, fontWeight: 700, margin: "0 0 8px" }}>{s.h}</h3>
+            <p style={{ fontSize: 15, color: "rgba(255,255,255,0.7)", margin: 0, lineHeight: 1.6 }}>{s.p}</p>
+          </div>
+        ))}
+      </div>
+      {c.cta && (
+        <button onClick={() => onNav(c.cta!.to)} style={{ ...violetBtn, padding: "14px 26px", fontSize: 15, marginTop: 28 }}>{c.cta.label}</button>
+      )}
     </div>
   );
 }
