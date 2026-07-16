@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Category: SANTE | FUNERAILLES | PROJET_COMMUNAUTAIRE | EDUCATION | ENTREPRISE | TONTINE
+// Visibility: PUBLIQUE | PRIVEE
+// ContributionStatus: PENDING | CONFIRMED | FAILED
+// PaymentChannel: ORANGE_MONEY | MTN_MOMO | NFC | QR | CARTE
+// SQLite has no native enum support in Prisma, so these are plain strings validated at the API layer.
+
+model Campaign {
+  id            String   @id @default(uuid())
+  slug          String   @unique
+  title         String
+  description   String
+  category      String
+  targetAmount  Int
+  deadline      DateTime?
+  coverImage    String?
+  beneficiary   String
+  visibility    String   @default("PUBLIQUE")
+  isTontine     Boolean  @default(false)
+  qrCodeDataUrl String?
+  createdAt     DateTime @default(now())
+  contributions Contribution[]
+}
+
+model Contribution {
+  id              String   @id @default(uuid())
+  campaignId      String
+  campaign        Campaign @relation(fields: [campaignId], references: [id])
+  amount          Int
+  channel         String
+  status          String   @default("PENDING")
+  contributorName String?
+  isAnonymous     Boolean  @default(false)
+  message         String?
+  phoneNumber     String?
+  providerTxId    String?  // Camoo cashOut.id
+  createdAt       DateTime @default(now())
+}
