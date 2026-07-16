@@ -250,7 +250,66 @@ export default function SungkuApp() {
       {view === "create" && <Create onDone={refresh} goDashboard={() => setView("dashboard")} />}
       {view === "dashboard" && <Dashboard campaign={selected ?? campaigns[0]} />}
       {view === "dev" && <DevPortal />}
+
+      <Footer onNav={setView} />
     </div>
+  );
+}
+
+// ─── Footer ───────────────────────────────────────────────────────────────────
+
+function Footer({ onNav }: { onNav: (v: View) => void }) {
+  const linkStyle: CSSProperties = { background: "none", border: "none", padding: 0, textAlign: "left", color: "rgba(255,255,255,0.55)", fontSize: 14, cursor: "pointer", fontFamily: "inherit" };
+  const colTitle: CSSProperties = { fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "rgba(255,255,255,0.4)", margin: "0 0 16px" };
+
+  const platform = [
+    { label: "Explorer les campagnes", onClick: () => onNav("home") },
+    { label: "Créer une cagnotte", onClick: () => onNav("create") },
+    { label: "Comment ça marche", onClick: () => onNav("home") },
+    { label: "Catégories", onClick: () => onNav("home") },
+    { label: "Campagnes urgentes", onClick: () => onNav("home") },
+  ];
+  const support = ["Centre d'aide", "Signaler une campagne", "Conformité COBAC", "Presse & médias", "Nous contacter"];
+
+  return (
+    <footer style={{ borderTop: BORDER, marginTop: 40 }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "48px 32px 56px", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 40 }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+            <div style={{ width: 30, height: 30, borderRadius: 999, background: VIOLET, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ width: 14, height: 7, borderRadius: 999, background: "#fff" }} />
+            </div>
+            <span style={{ fontSize: 17, fontWeight: 800 }}>Sungku</span>
+          </div>
+          <p style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", lineHeight: 1.6, margin: 0, maxWidth: 240 }}>
+            La plateforme de collecte de fonds camerounaise — Mobile Money, NFC, QR code et carte, depuis le Cameroun ou la diaspora.
+          </p>
+        </div>
+
+        <div>
+          <p style={colTitle}>Plateforme</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {platform.map((l) => (
+              <button key={l.label} onClick={l.onClick} style={linkStyle}>{l.label}</button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p style={colTitle}>Support</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {support.map((l) => (
+              <button key={l} style={linkStyle}>{l}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div style={{ borderTop: BORDER }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto", padding: "20px 32px", fontSize: 13, color: "rgba(255,255,255,0.35)" }}>
+          © {new Date().getFullYear()} Sungku · Plateforme de collecte de fonds · Conformité BEAC/COBAC
+        </div>
+      </div>
+    </footer>
   );
 }
 
