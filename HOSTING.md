@@ -66,6 +66,29 @@ schéma (aucune migration spécifique à générer).
 
 ---
 
+## Déploiement sur Railway (utilisé ici)
+
+L'API cible : `https://sungku-api-production.up.railway.app`
+
+Si le domaine renvoie `404` avec l'en-tête `x-railway-fallback: true`, c'est qu'**aucun service
+n'est réellement démarré** (config manquante). Réglage :
+
+1. **Service → Settings → Root Directory = `apps/api`** (indispensable en monorepo).
+   Le fichier `apps/api/railway.toml` fournit alors build + start + healthcheck.
+2. **Variables** (Service → Variables) — voir `apps/api/.env.example` :
+   - `DATABASE_URL` — pour un démarrage rapide (éphémère) : `file:./data.db`.
+     Pour de la persistance : ajoutez le plugin **PostgreSQL** de Railway (il injecte `DATABASE_URL`),
+     mettez `provider = "postgresql"` dans `schema.prisma`, et remplacez le start par `npx prisma db push`.
+   - `APP_PUBLIC_URL = https://sungku-api-production.up.railway.app`
+   - `JWT_SECRET`, `CAMOO_API_KEY`, `CAMOO_API_SECRET`, `SMTP_*`, `ADMIN_EMAILS`
+   - `NODE_ENV = production`
+3. **Redeploy**. Vérifiez `https://sungku-api-production.up.railway.app/health` → `{"status":"ok"}`.
+4. (Option) Peupler les campagnes de démonstration : exécutez `npm run seed` depuis un shell Railway,
+   ou via un déploiement one-off avec `startCommand = "npm run seed"`.
+
+Le frontend est déjà pointé sur cette URL via `apps/web/.env.production`
+(`NEXT_PUBLIC_API_URL`). Sur Vercel, la variable du dashboard prime si elle est définie.
+
 ## Autres options gratuites (équivalentes)
 
 - **Koyeb** : un service web gratuit (base Postgres via Neon).

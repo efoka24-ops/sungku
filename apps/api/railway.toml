@@ -1,0 +1,15 @@
+# Railway config for the Sungku API.
+# In the Railway service settings, set Root Directory = apps/api so this file is used.
+[build]
+builder = "nixpacks"
+buildCommand = "npm install && npx prisma generate && npm run build"
+
+[deploy]
+# Quick start uses the committed SQLite migrations (ephemeral on Railway — data resets on redeploy).
+# For persistence, add a Railway PostgreSQL plugin, set provider = "postgresql" in schema.prisma,
+# set DATABASE_URL to the plugin URL, and change the command to `npx prisma db push`.
+startCommand = "npx prisma migrate deploy && node dist/index.js"
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
