@@ -262,7 +262,15 @@ export default function SungkuApp() {
     setView("home");
   }
 
-  const campaigns = [...live, ...DEMO_CAMPAIGNS];
+  // Show live (DB) campaigns which respect moderation; fall back to demo data
+  // only when the database is empty (fresh install).
+  const campaigns = live.length ? live : DEMO_CAMPAIGNS;
+
+  // Re-fetch when returning to the home view so moderation changes are reflected.
+  useEffect(() => {
+    if (view === "home") refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
 
   // shared selection
   const [selected, setSelected] = useState<Campaign | null>(null);

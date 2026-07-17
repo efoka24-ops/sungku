@@ -45,6 +45,28 @@ Exemple avec **Railway** ou **Render** :
 - CORS : l'API autorise déjà toutes les origines (`cors()`) ; restreignez au domaine Vercel en prod
   si souhaité.
 
+## Dépannage (échec ou site vide après déploiement)
+
+Le log de build fourni se termine par `Build Completed` puis `Deploying outputs…` :
+**le build a réussi**. S'il y a « échec » ou un site vide, la cause est presque toujours l'une de celles-ci :
+
+1. **Root Directory non réglé sur `apps/web`.**
+   Indice dans le log : `npm warn deprecated uuid@10…` — `uuid` est une dépendance de
+   `apps/api`, pas de `apps/web`. Si Vercel installe `uuid`, c'est qu'il ne pointe pas sur `apps/web`.
+   → Project → **Settings → General → Root Directory** = `apps/web`, puis redéployez.
+
+2. **`NEXT_PUBLIC_API_URL` absent ou = `localhost`.**
+   Le site se build mais ne peut joindre aucune API → aucune campagne, connexion impossible.
+   → Déployez d'abord l'API (Railway/Render, voir plus bas), puis mettez son URL publique dans
+   `NEXT_PUBLIC_API_URL` (Settings → Environment Variables) et **redéployez** (les `NEXT_PUBLIC_*`
+   sont figées au build).
+
+3. **API non déployée.** Vercel n'héberge que le front. Sans API publique + PostgreSQL,
+   l'application n'a pas de back-end. C'est l'étape la plus souvent oubliée.
+
+Si le déploiement est réellement marqué « Failed », copiez la ligne commençant par `Error:`
+(après `Deploying outputs…`) : le log ci-dessus ne la contient pas.
+
 ## Note : tout sur Vercel ?
 
 On peut aussi héberger l'API en *Serverless Functions* Vercel, mais il faut :
