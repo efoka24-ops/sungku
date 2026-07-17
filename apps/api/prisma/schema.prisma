@@ -28,8 +28,11 @@ model Campaign {
   qrCodeDataUrl String?
   organizerId   String?
   organizer     User?    @relation(fields: [organizerId], references: [id])
+  // moderationStatus: APPROVED | PENDING | REJECTED (sensitive categories start PENDING)
+  moderationStatus String @default("APPROVED")
   createdAt     DateTime @default(now())
   contributions Contribution[]
+  reports       Report[]
 }
 
 // Organizer account (role 3)
@@ -44,8 +47,28 @@ model User {
   kycIdNumber    String?
   withdrawMethod String?    // wallet | mobile_money
   withdrawPhone  String?
+  isAdmin        Boolean    @default(false)
   createdAt      DateTime   @default(now())
   campaigns      Campaign[]
+}
+
+// User report on a campaign (moderation queue)
+// status: OPEN | RESOLVED | DISMISSED
+model Report {
+  id            String   @id @default(uuid())
+  campaignId    String
+  campaign      Campaign @relation(fields: [campaignId], references: [id])
+  reason        String
+  reporterEmail String?
+  status        String   @default("OPEN")
+  createdAt     DateTime @default(now())
+}
+
+// Global platform settings (e.g. fees per category), stored as key -> JSON value
+model PlatformSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }
 
 // Short-lived email OTP codes

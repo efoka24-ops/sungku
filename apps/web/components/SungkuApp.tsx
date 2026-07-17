@@ -109,9 +109,9 @@ const api = {
     if (!res.ok) throw new Error("contribute failed");
     return res.json();
   },
-  // ── auth / accounts ──
-  post: (path: string, body: any, token?: string) =>
-    req("POST", path, body, token),
+  // ── auth / accounts / admin ──
+  post: (path: string, body: any, token?: string) => req("POST", path, body, token),
+  put: (path: string, body: any, token?: string) => req("PUT", path, body, token),
   get: (path: string, token?: string) => req("GET", path, undefined, token),
 };
 
@@ -210,7 +210,7 @@ function ImgSlot({ h, label: text, src }: { h: number; label: string; src?: stri
   );
 }
 
-type View = "home" | "campaign" | "create" | "dashboard" | "dev" | "how" | "help" | "report" | "cobac" | "press" | "contact";
+type View = "home" | "campaign" | "create" | "dashboard" | "dev" | "admin" | "how" | "help" | "report" | "cobac" | "press" | "contact";
 
 export interface AuthUser {
   id: string;
@@ -220,6 +220,7 @@ export interface AuthUser {
   kycStatus: string;
   withdrawMethod?: string;
   withdrawPhone?: string;
+  isAdmin?: boolean;
 }
 
 export default function SungkuApp() {
@@ -298,6 +299,7 @@ export default function SungkuApp() {
             <button onClick={() => setView("create")} style={navBtn("create")}>Créer une campagne</button>
             {user && <button onClick={() => setView("dashboard")} style={navBtn("dashboard")}>Tableau de bord</button>}
             <button onClick={() => setView("dev")} style={navBtn("dev")}>Développeurs</button>
+            {user?.isAdmin && <button onClick={() => setView("admin")} style={navBtn("admin")}>Back office</button>}
           </div>
           {user ? (
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -316,6 +318,7 @@ export default function SungkuApp() {
       {(view === "how" || view === "help" || view === "report" || view === "cobac" || view === "press" || view === "contact") && <InfoPage page={view} onNav={setView} />}
       {view === "dashboard" && <Dashboard campaign={selected ?? campaigns[0]} user={user} token={token} onUser={setUser} onRequireAuth={() => setAuthOpen(true)} />}
       {view === "dev" && <DevPortal />}
+      {view === "admin" && <AdminBackOffice user={user} token={token} onRequireAuth={() => setAuthOpen(true)} />}
 
       <Footer onNav={setView} />
       {authOpen && <AuthModal onClose={() => setAuthOpen(false)} onAuthed={onAuthed} />}
@@ -465,6 +468,7 @@ function CampaignView({ campaign, onBack, onContributed }: { campaign: Campaign;
   const [message, setMessage] = useState("");
   const [contributed, setContributed] = useState(false);
   const [copyLabel, setCopyLabel] = useState("Copier le lien");
+  const [reportLabel, setReportLabel] = useState("Signaler");
   const [submitting, setSubmitting] = useState(false);
 
   const finalAmount = custom ? parseInt(custom.replace(/\s/g, "")) || 0 : preset ?? 0;
@@ -504,6 +508,18 @@ function CampaignView({ campaign, onBack, onContributed }: { campaign: Campaign;
     setContributors((n) => n + 1);
     setContributed(true);
     setSubmitting(false);
+  }
+
+  async function reportCampaign() {
+    const reason = typeof window !== "undefined" ? window.prompt("Motif du signalement :") : null;
+    if (!reason) return;
+    try {
+      await api.post(`/campaigns/${campaign.slug || campaign.id}/report`, { reason });
+      setReportLabel("Signalement envoyé");
+    } catch {
+      setReportLabel("Signalement enregistré");
+    }
+    setTimeout(() => setReportLabel("Signaler"), 2500);
   }
 
   function copyLink() {
@@ -547,6 +563,7 @@ function CampaignView({ campaign, onBack, onContributed }: { campaign: Campaign;
             <button style={{ ...ghostBtn, padding: "10px 20px", fontSize: 14 }}>Partager sur WhatsApp</button>
             <button style={{ ...ghostBtn, padding: "10px 20px", fontSize: 14 }}>Partager sur Facebook</button>
             <button onClick={copyLink} style={{ ...ghostBtn, padding: "10px 20px", fontSize: 14 }}>{copyLabel}</button>
+            <button onClick={reportCampaign} style={{ ...ghostBtn, padding: "10px 20px", fontSize: 14, color: "#E74C3C", borderColor: "rgba(231,76,60,0.4)" }}>{reportLabel}</button>
           </div>
         </div>
 
@@ -1274,6 +1291,179 @@ function InfoPage({ page, onNav }: { page: View; onNav: (v: View) => void }) {
       </div>
       {c.cta && (
         <button onClick={() => onNav(c.cta!.to)} style={{ ...violetBtn, padding: "14px 26px", fontSize: 15, marginTop: 28 }}>{c.cta.label}</button>
+      )}
+    </div>
+  );
+}
+
+// ─── Admin back office ────────────────────────────────────────────────────────
+
+const CAT_LABEL: Record<string, string> = {
+  SANTE: "Santé", FUNERAILLES: "Funérailles", PROJET_COMMUNAUTAIRE: "Projet communautaire",
+  EDUCATION: "Éducation", ENTREPRISE: "Entreprise", TONTINE: "Tontine",
+};
+
+function AdminBackOffice({ user, token, onRequireAuth }: { user: AuthUser | null; token: string | null; onRequireAuth: () => void }) {
+  const [tab, setTab] = useState<"overview" | "campaigns" | "partners" | "reports" | "fees">("overview");
+  const [stats, setStats] = useState<any>(null);
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [partners, setPartners] = useState<any[]>([]);
+  const [reports, setReports] = useState<any[]>([]);
+  const [fees, setFees] = useState<Record<string, number>>({});
+
+  async function loadAll() {
+    if (!token) return;
+    const [s, c, p, r, f] = await Promise.all([
+      api.get("/admin/stats", token),
+      api.get("/admin/campaigns", token),
+      api.get("/admin/partners", token),
+      api.get("/admin/reports", token),
+      api.get("/admin/fees", token),
+    ]);
+    setStats(s); setCampaigns(c); setPartners(p); setReports(r); setFees(f);
+  }
+  useEffect(() => { if (user?.isAdmin) loadAll(); }, [user, token]);
+
+  async function moderate(id: string, status: string) {
+    await api.post(`/admin/campaigns/${id}/moderate`, { status }, token || undefined);
+    loadAll();
+  }
+  async function setPartnerStatus(id: string, status: string) {
+    await api.post(`/admin/partners/${id}/status`, { status }, token || undefined);
+    loadAll();
+  }
+  async function setReportStatus(id: string, status: string) {
+    await api.post(`/admin/reports/${id}/status`, { status }, token || undefined);
+    loadAll();
+  }
+  async function saveFees() {
+    await api.put("/admin/fees", fees, token || undefined);
+    loadAll();
+  }
+
+  if (!user?.isAdmin) {
+    return (
+      <div style={{ maxWidth: 560, margin: "0 auto", padding: "80px 32px", textAlign: "center" }}>
+        <h1 style={{ fontSize: 30, fontWeight: 800, margin: "0 0 12px" }}>Back office</h1>
+        <p style={{ fontSize: 15, color: "rgba(255,255,255,0.55)", margin: "0 0 28px" }}>
+          Espace réservé aux administrateurs de la plateforme.
+        </p>
+        {!user && <button onClick={onRequireAuth} style={{ ...violetBtn, padding: "14px 26px", fontSize: 15 }}>Se connecter</button>}
+      </div>
+    );
+  }
+
+  const tabBtn = (t: string): CSSProperties => ({
+    background: tab === t ? "#fff" : "transparent", color: tab === t ? "#000" : "rgba(255,255,255,0.7)",
+    border: tab === t ? "1px solid #fff" : "1px solid rgba(255,255,255,0.15)", padding: "9px 16px",
+    borderRadius: 999, fontSize: 13, fontWeight: 600, cursor: "pointer",
+  });
+  const modColor = (s: string) => (s === "APPROVED" ? "#2ECC71" : s === "REJECTED" ? "#E74C3C" : "#F39C12");
+  const modLabel = (s: string) => (s === "APPROVED" ? "Approuvée" : s === "REJECTED" ? "Rejetée" : "En attente");
+
+  return (
+    <div style={{ maxWidth: 1280, margin: "0 auto", padding: "56px 32px 80px" }}>
+      <h1 style={{ fontSize: 36, fontWeight: 800, margin: "0 0 8px" }}>Back office</h1>
+      <p style={{ fontSize: 16, color: "rgba(255,255,255,0.55)", margin: "0 0 28px" }}>Gestion globale de la plateforme Sungku.</p>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 28 }}>
+        {[["overview", "Vue d'ensemble"], ["campaigns", "Modération"], ["partners", "Partenaires"], ["reports", "Signalements"], ["fees", "Frais"]].map(([t, l]) => (
+          <button key={t} onClick={() => setTab(t as any)} style={tabBtn(t)}>{l}</button>
+        ))}
+      </div>
+
+      {tab === "overview" && stats && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 16 }}>
+          {[
+            ["Campagnes", stats.campaigns], ["Comptes", stats.users], ["Partenaires", stats.partners],
+            ["Total collecté", `${fmt(stats.totalRaised)} ${CURRENCY}`], ["Contributions", stats.contributions],
+            ["En modération", stats.pendingModeration], ["Signalements ouverts", stats.openReports],
+          ].map(([l, v]) => (
+            <div key={l as string} style={{ ...card, borderRadius: 16, padding: 22 }}>
+              <p style={{ margin: "0 0 6px", fontSize: 13, color: "rgba(255,255,255,0.45)" }}>{l}</p>
+              <p style={{ margin: 0, fontSize: 24, fontWeight: 800 }}>{v}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === "campaigns" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {campaigns.length === 0 && <p style={{ color: "rgba(255,255,255,0.5)" }}>Aucune campagne.</p>}
+          {campaigns.map((c) => (
+            <div key={c.id} style={{ ...card, padding: 18, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+              <div style={{ minWidth: 240, flex: 1 }}>
+                <p style={{ margin: "0 0 4px", fontWeight: 700 }}>{c.title}</p>
+                <p style={{ margin: 0, fontSize: 13, color: "rgba(255,255,255,0.5)" }}>
+                  {CAT_LABEL[c.category] || c.category} · {c.organizer?.email || "sans organisateur"} · {fmt(c.raised)}/{fmt(c.targetAmount)} {CURRENCY}
+                  {c.openReports > 0 && <span style={{ color: "#E74C3C" }}> · {c.openReports} signalement(s)</span>}
+                </p>
+              </div>
+              <span style={{ color: modColor(c.moderationStatus), fontWeight: 700, fontSize: 13 }}>{modLabel(c.moderationStatus)}</span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => moderate(c.id, "APPROVED")} style={{ background: "#fff", color: "#000", border: "none", padding: "8px 14px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Approuver</button>
+                <button onClick={() => moderate(c.id, "REJECTED")} style={{ ...ghostBtn, padding: "8px 14px", fontSize: 12 }}>Rejeter</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === "partners" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {partners.length === 0 && <p style={{ color: "rgba(255,255,255,0.5)" }}>Aucun partenaire.</p>}
+          {partners.map((p) => (
+            <div key={p.id} style={{ ...card, padding: 18, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+              <div style={{ minWidth: 240, flex: 1 }}>
+                <p style={{ margin: "0 0 4px", fontWeight: 700 }}>{p.orgName}</p>
+                <p style={{ margin: 0, fontSize: 13, color: "rgba(255,255,255,0.5)" }}>{p.contactName} · {p.contactEmail} · {p.apiKeys?.length || 0} clé(s)</p>
+              </div>
+              <span style={{ color: p.status === "APPROVED" ? "#2ECC71" : p.status === "REJECTED" ? "#E74C3C" : "#F39C12", fontWeight: 700, fontSize: 13 }}>
+                {p.status === "APPROVED" ? "Validé" : p.status === "REJECTED" ? "Rejeté" : "En attente"}
+              </span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setPartnerStatus(p.id, "APPROVED")} style={{ background: "#fff", color: "#000", border: "none", padding: "8px 14px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Valider</button>
+                <button onClick={() => setPartnerStatus(p.id, "REJECTED")} style={{ ...ghostBtn, padding: "8px 14px", fontSize: 12 }}>Rejeter</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === "reports" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {reports.length === 0 && <p style={{ color: "rgba(255,255,255,0.5)" }}>Aucun signalement.</p>}
+          {reports.map((r) => (
+            <div key={r.id} style={{ ...card, padding: 18, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+              <div style={{ minWidth: 240, flex: 1 }}>
+                <p style={{ margin: "0 0 4px", fontWeight: 700 }}>{r.campaign?.title || "Campagne supprimée"}</p>
+                <p style={{ margin: 0, fontSize: 13, color: "rgba(255,255,255,0.5)" }}>{r.reason}{r.reporterEmail ? ` · ${r.reporterEmail}` : ""}</p>
+              </div>
+              <span style={{ color: r.status === "OPEN" ? "#F39C12" : "rgba(255,255,255,0.5)", fontWeight: 700, fontSize: 13 }}>{r.status}</span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setReportStatus(r.id, "RESOLVED")} style={{ background: "#fff", color: "#000", border: "none", padding: "8px 14px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Résolu</button>
+                <button onClick={() => setReportStatus(r.id, "DISMISSED")} style={{ ...ghostBtn, padding: "8px 14px", fontSize: 12 }}>Rejeter</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === "fees" && (
+        <div style={{ ...card, padding: 24, maxWidth: 520 }}>
+          <h3 style={{ fontSize: 17, fontWeight: 700, margin: "0 0 6px" }}>Frais de plateforme par catégorie (%)</h3>
+          <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", margin: "0 0 18px" }}>Appliqués sur les montants collectés lors des retraits.</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {Object.keys(fees).map((k) => (
+              <div key={k} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <span style={{ fontSize: 14 }}>{CAT_LABEL[k] || k}</span>
+                <input type="number" step="0.1" value={fees[k]} onChange={(e) => setFees({ ...fees, [k]: parseFloat(e.target.value) || 0 })}
+                  style={{ width: 100, boxSizing: "border-box", background: "#000", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", padding: "10px 14px", borderRadius: 10, fontSize: 14 }} />
+              </div>
+            ))}
+          </div>
+          <button onClick={saveFees} style={{ ...violetBtn, padding: "12px 20px", fontSize: 14, marginTop: 18 }}>Enregistrer les frais</button>
+        </div>
       )}
     </div>
   );

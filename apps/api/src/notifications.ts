@@ -5,11 +5,35 @@ function fmt(n: number) {
   return new Intl.NumberFormat("fr-FR").format(n);
 }
 
-// SMS gateway is not yet integrated — log the message. Swap this for a real
-// provider (e.g. Camoo SMS / operator API) when credentials are available.
+// Free SMS provider: TextBelt (https://textbelt.com). The public key "textbelt"
+// allows 1 free SMS/day; set SMS_TEXTBELT_KEY to a paid/quota key for more.
+// Falls back to a log-only stub when disabled (SMS_PROVIDER=stub or unset).
+const SMS_PROVIDER = process.env.SMS_PROVIDER || "stub"; // "textbelt" | "stub"
+const TEXTBELT_KEY = process.env.SMS_TEXTBELT_KEY || "textbelt";
+const TEXTBELT_URL = process.env.SMS_TEXTBELT_URL || "https://textbelt.com/text";
+
 async function sendSms(phone: string, message: string) {
-  console.log(`[SMS:stub] ${phone} :: ${message}`);
-  return { sent: false, stub: true };
+  if (SMS_PROVIDER !== "textbelt") {
+    console.log(`[SMS:stub] ${phone} :: ${message}`);
+    return { sent: false, stub: true };
+  }
+  try {
+    const res = await fetch(TEXTBELT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, message, key: TEXTBELT_KEY }),
+    });
+    const data: any = await res.json().catch(() => ({}));
+    if (!data.success) {
+      console.warn(`[SMS:textbelt] failed for ${phone}: ${data.error || "unknown"} (quota: ${data.quotaRemaining})`);
+      return { sent: false, error: data.error };
+    }
+    console.log(`[SMS:textbelt] sent to ${phone} (textId ${data.textId}, quota ${data.quotaRemaining})`);
+    return { sent: true, textId: data.textId };
+  } catch (e: any) {
+    console.error(`[SMS:textbelt] error for ${phone}: ${e.message}`);
+    return { sent: false, error: e.message };
+  }
 }
 
 /**

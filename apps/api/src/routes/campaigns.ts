@@ -25,6 +25,7 @@ campaignsRouter.get("/", async (req, res) => {
   const campaigns = await prisma.campaign.findMany({
     where: {
       visibility: "PUBLIQUE",
+      moderationStatus: "APPROVED", // only moderated-approved campaigns are public
       ...(category ? { category: category as any } : {}),
       ...(q ? { title: { contains: q } } : {}),
     },
@@ -49,6 +50,10 @@ campaignsRouter.post("/", requireAuth, async (req: AuthedRequest, res) => {
     return res.status(400).json({ error: "Champs requis manquants" });
   }
 
+  // Sensitive categories require moderation before appearing publicly.
+  const SENSITIVE = ["SANTE", "FUNERAILLES"];
+  const moderationStatus = SENSITIVE.includes(category) ? "PENDING" : "APPROVED";
+
   const slug = slugify(title);
   const shareUrl = `http://localhost:3000/c/${slug}`;
   const qrCodeDataUrl = await QRCode.toDataURL(shareUrl, {
@@ -69,6 +74,7 @@ campaignsRouter.post("/", requireAuth, async (req: AuthedRequest, res) => {
       isTontine: Boolean(isTontine),
       qrCodeDataUrl,
       organizerId: req.userId || null,
+      moderationStatus,
     },
   });
 
@@ -90,4 +96,18 @@ campaignsRouter.get("/:id", async (req, res) => {
     collectedAmount: confirmed.reduce((sum, c) => sum + c.amount, 0),
     contributorCount: confirmed.length,
   });
+});
+
+// Public: report a campaign (adds to the moderation queue)
+campaignsRouter.post("/:id/report", async (req, res) => {
+  const { reason, reporterEmail } = req.body;
+  if (!reason) return res.status(400).json({ error: "Motif requis" });
+  const campaign = await prisma.campaign.findFirst({
+    where: { OR: [{ id: req.params.id }, { slug: req.params.id }] },
+  });
+  if (!campaign) return res.status(404).json({ error: "Campagne introuvable" });
+  await prisma.report.create({
+    data: { campaignId: campaign.id, reason, reporterEmail: reporterEmail || null },
+  });
+  res.status(201).json({ received: true });
 });

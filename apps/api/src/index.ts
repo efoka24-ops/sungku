@@ -7,6 +7,7 @@ import { paymentsRouter } from "./routes/payments";
 import { authRouter } from "./routes/auth";
 import { withdrawRouter } from "./routes/withdraw";
 import { partnersRouter } from "./routes/partners";
+import { adminRouter } from "./routes/admin";
 
 const app = express();
 app.use(cors());
@@ -19,6 +20,7 @@ app.use("/payments", paymentsRouter);
 app.use("/auth", authRouter);
 app.use("/withdraw", withdrawRouter);
 app.use("/partners", partnersRouter);
+app.use("/admin", adminRouter);
 
 // Global error handler so a rejected async handler returns 500 instead of crashing.
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

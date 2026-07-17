@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
-import { issueOtp, consumeOtp, signToken, requireAuth, AuthedRequest, devCode } from "../auth";
+import { issueOtp, consumeOtp, signToken, requireAuth, AuthedRequest, devCode, isAdminEmail } from "../auth";
 import { sendOtpEmail } from "../mailer";
 
 export const authRouter = Router();
@@ -38,7 +38,7 @@ authRouter.post("/verify-otp", async (req, res) => {
   }
   const user = await prisma.user.update({
     where: { email: normalized },
-    data: { emailVerified: true },
+    data: { emailVerified: true, isAdmin: isAdminEmail(normalized) },
   });
   res.json({ token: signToken(user.id), user: publicUser(user) });
 });
@@ -67,7 +67,7 @@ authRouter.post("/login/verify", async (req, res) => {
   }
   const user = await prisma.user.update({
     where: { email: normalized },
-    data: { emailVerified: true },
+    data: { emailVerified: true, isAdmin: isAdminEmail(normalized) },
   });
   res.json({ token: signToken(user.id), user: publicUser(user) });
 });
@@ -103,5 +103,6 @@ function publicUser(u: any) {
     kycStatus: u.kycStatus,
     withdrawMethod: u.withdrawMethod,
     withdrawPhone: u.withdrawPhone,
+    isAdmin: u.isAdmin,
   };
 }

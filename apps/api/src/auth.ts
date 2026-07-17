@@ -55,6 +55,30 @@ export interface AuthedRequest extends Request {
   userId?: string;
 }
 
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "")
+  .split(",")
+  .map((e) => e.trim().toLowerCase())
+  .filter(Boolean);
+
+export function isAdminEmail(email: string): boolean {
+  return ADMIN_EMAILS.includes(email.toLowerCase());
+}
+
+export async function requireAdmin(req: AuthedRequest, res: Response, next: NextFunction) {
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (!token) return res.status(401).json({ error: "Authentification requise" });
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as { sub: string };
+    const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+    if (!user?.isAdmin) return res.status(403).json({ error: "Accès back-office réservé aux administrateurs" });
+    req.userId = user.id;
+    next();
+  } catch {
+    return res.status(401).json({ error: "Session invalide ou expirée" });
+  }
+}
+
 export async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : "";
