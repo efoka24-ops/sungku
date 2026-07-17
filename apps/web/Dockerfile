@@ -2,7 +2,7 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 COPY . .
 # API URL is baked at build time (NEXT_PUBLIC_*). Override via build-arg.
 ARG NEXT_PUBLIC_API_URL=http://localhost:4000
