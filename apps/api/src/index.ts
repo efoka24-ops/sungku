@@ -33,7 +33,8 @@ process.on("unhandledRejection", (reason) => {
   console.error("Unhandled promise rejection:", reason);
 });
 
+// Bind to 0.0.0.0 and the platform-provided PORT (required by Railway/containers).
 const port = Number(process.env.PORT) || 4000;
-app.listen(port, () => {
-  console.log(`Sungku API listening on http://localhost:${port}`);
+app.listen(port, "0.0.0.0", () => {
+  console.log(`Sungku API listening on 0.0.0.0:${port}`);
 });
