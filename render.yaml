@@ -1,0 +1,54 @@
+# Render Blueprint — free hosting for the Sungku API.
+# Deploy: https://render.com → New → Blueprint → pick this repo (branch preprod).
+# The database is a free Neon PostgreSQL (see HOSTING.md) — set DATABASE_URL below.
+#
+# NOTE: for PostgreSQL, set `provider = "postgresql"` in apps/api/prisma/schema.prisma
+# (it is "sqlite" for local dev). The start command uses `prisma db push` which creates
+# the schema directly from schema.prisma (no provider-specific migration files needed).
+services:
+  - type: web
+    name: sungku-api
+    runtime: node
+    rootDir: apps/api
+    plan: free
+    branch: preprod
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npx prisma db push --accept-data-loss && node dist/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "4000"
+      - key: DATABASE_URL
+        sync: false # paste your Neon connection string in the Render dashboard
+      - key: APP_PUBLIC_URL
+        sync: false # e.g. https://sungku-api.onrender.com
+      - key: JWT_SECRET
+        generateValue: true
+      - key: OTP_TTL_MINUTES
+        value: "10"
+      - key: CAMOO_BASE_URL
+        value: https://api.camoo.cm/v1/payment
+      - key: CAMOO_API_KEY
+        sync: false
+      - key: CAMOO_API_SECRET
+        sync: false
+      - key: CAMOO_CURRENCY
+        value: XAF
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: SMS_PROVIDER
+        value: stub
+      - key: SMS_TEXTBELT_KEY
+        value: textbelt
+      - key: ADMIN_EMAILS
+        sync: false
