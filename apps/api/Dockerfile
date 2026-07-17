@@ -14,5 +14,5 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY package*.json ./
 EXPOSE 4000
-# Apply migrations then start. DATABASE_URL is provided at runtime.
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
+# Sync schema (PostgreSQL) then start. DATABASE_URL is provided at runtime.
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss && node dist/index.js"]
