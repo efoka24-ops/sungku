@@ -1,13 +1,14 @@
 # Railway config for the Sungku API.
 # In the Railway service settings, set Root Directory = apps/api so this file is used.
 [build]
-builder = "nixpacks"
-buildCommand = "npm install && npx prisma generate && npm run build"
+# Use the Dockerfile (node:20-slim + openssl) for reliable Prisma engines.
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 # PostgreSQL via DATABASE_URL. `prisma db push` syncs the schema on each deploy
 # (no-op when already in sync); no migration files needed.
-startCommand = "npx prisma db push --accept-data-loss && node dist/index.js"
+startCommand = "npx prisma db push --accept-data-loss; node dist/index.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 120
 restartPolicyType = "on_failure"

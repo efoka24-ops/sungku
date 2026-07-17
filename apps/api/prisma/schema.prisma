@@ -1,7 +1,7 @@
 generator client {
   provider      = "prisma-client-js"
-  // "native" for local dev; musl target for the node:20-alpine deploy image (Railway/Docker).
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  // "native" for local dev; debian target for the node:20-slim deploy image (Railway/Docker).
+  binaryTargets = ["native", "debian-openssl-3.0.x", "debian-openssl-1.1.x"]
 }
 
 datasource db {

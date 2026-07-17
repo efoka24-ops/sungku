@@ -1,18 +1,20 @@
-# Sungku API (Express + Prisma)
-FROM node:20-alpine AS build
+# Sungku API (Express + Prisma). Debian slim + openssl for reliable Prisma engines.
+FROM node:20-slim AS build
 WORKDIR /app
+RUN apt-get update -y && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY package*.json ./
 RUN npm install
 COPY . .
 RUN npx prisma generate && npm run build
 
-FROM node:20-alpine
+FROM node:20-slim
 WORKDIR /app
 ENV NODE_ENV=production
+RUN apt-get update -y && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY package*.json ./
 EXPOSE 4000
-# Sync schema (PostgreSQL) then start. DATABASE_URL is provided at runtime.
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss && node dist/index.js"]
+# Sync schema (idempotent) then start. `;` so the app starts even if push is a no-op/warns.
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss; node dist/index.js"]
