@@ -102,7 +102,8 @@ export function verifyWebhookSignature(query: Record<string, unknown>): boolean 
 // Normalize Camoo's (case-insensitive) status into our contribution status.
 export function normalizeStatus(status: string): "CONFIRMED" | "FAILED" | "PENDING" {
   const s = (status || "").toLowerCase();
-  if (["success", "confirmed", "completed"].includes(s)) return "CONFIRMED";
+  // CamooPay statuses: created | initialised | in_progress | succeeded/success | confirmed | failed | canceled | errored ...
+  if (["success", "succeeded", "confirmed", "completed"].includes(s)) return "CONFIRMED";
   if (["failed", "canceled", "cancelled", "errored", "underinvestigation"].includes(s)) return "FAILED";
-  return "PENDING";
+  return "PENDING"; // created, initialised, in_progress, pending
 }

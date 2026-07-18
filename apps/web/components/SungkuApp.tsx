@@ -840,6 +840,44 @@ function Dashboard({ campaign, user, token, onUser, onRequireAuth }: { campaign:
 
   const kycVerified = user?.kycStatus === "VERIFIED";
 
+  // Live campaign totals + contributions, refreshed periodically so confirmed
+  // mobile-money payments appear without a manual reload.
+  const [liveRaised, setLiveRaised] = useState(campaign?.raised ?? 0);
+  const [liveContributors, setLiveContributors] = useState(campaign?.contributors ?? 0);
+  const [recent, setRecent] = useState<{ name: string; amount: string; method: string; time: string }[]>([]);
+
+  useEffect(() => {
+    if (!campaign?.slug) return;
+    let active = true;
+    async function refreshDash() {
+      try {
+        const [c, list] = await Promise.all([
+          api.get(`/campaigns/${campaign.slug}`),
+          api.contributions(campaign.slug!),
+        ]);
+        if (!active) return;
+        setLiveRaised(c.collectedAmount ?? 0);
+        setLiveContributors(c.contributorCount ?? 0);
+        setRecent(
+          (list as any[]).map((x) => ({
+            name: x.isAnonymous ? "Anonyme" : x.contributorName || "Anonyme",
+            amount: fmt(x.amount),
+            method: x.channel,
+            time: "récemment",
+          }))
+        );
+      } catch {
+        /* keep last values */
+      }
+    }
+    refreshDash();
+    const t = setInterval(refreshDash, 5000);
+    return () => {
+      active = false;
+      clearInterval(t);
+    };
+  }, [campaign?.slug]);
+
   async function submitKyc() {
     if (!token) return;
     setKycErr(null);
@@ -923,8 +961,8 @@ function Dashboard({ campaign, user, token, onUser, onRequireAuth }: { campaign:
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 16, marginBottom: 36 }}>
         {[
-          { label: "Total collecté", value: `${fmt(campaign.raised)} ${CURRENCY}` },
-          { label: "Contributeurs", value: `${campaign.contributors}` },
+          { label: "Total collecté", value: `${fmt(liveRaised)} ${CURRENCY}` },
+          { label: "Contributeurs", value: `${liveContributors}` },
           { label: "Jours restants", value: `${campaign.daysLeft}` },
           { label: "Frais de plateforme", value: "2,5%" },
         ].map((k) => (
@@ -942,7 +980,10 @@ function Dashboard({ campaign, user, token, onUser, onRequireAuth }: { campaign:
             <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", fontSize: 12, color: "rgba(255,255,255,0.4)", padding: "0 8px 10px", borderBottom: BORDER }}>
               <span>Contributeur</span><span>Montant</span><span>Méthode</span><span>Date</span>
             </div>
-            {campaign.wall.map((w, i) => (
+            {recent.length === 0 && (
+              <div style={{ padding: "16px 8px", fontSize: 13, color: "rgba(255,255,255,0.4)" }}>Aucune contribution confirmée pour le moment.</div>
+            )}
+            {recent.map((w, i) => (
               <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", fontSize: 14, padding: "12px 8px", borderBottom: "1px solid rgba(255,255,255,0.05)", alignItems: "center" }}>
                 <span style={{ fontWeight: 600 }}>{w.name}</span>
                 <span>{w.amount} {CURRENCY}</span>
