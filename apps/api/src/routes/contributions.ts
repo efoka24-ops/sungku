@@ -1,7 +1,28 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
-import { cashout, camooConfigured, normalizeStatus } from "../camoo";
+import { cashout, camooConfigured, normalizeStatus, verify } from "../camoo";
 import { notifyContribution } from "../notifications";
+
+// Actively reconcile PENDING contributions with Camoo (in case the webhook never
+// fired). Confirms/fails them based on Camoo's /verify response.
+async function reconcilePending(campaignId: string) {
+  if (!camooConfigured()) return;
+  const pend = await prisma.contribution.findMany({
+    where: { campaignId, status: "PENDING", providerTxId: { not: null } },
+  });
+  for (const c of pend) {
+    try {
+      const r: any = await verify(c.providerTxId!);
+      const st = normalizeStatus(r?.verify?.status || "");
+      if (st !== "PENDING") {
+        await prisma.contribution.update({ where: { id: c.id }, data: { status: st } });
+        if (st === "CONFIRMED") await notifyContribution(c.id);
+      }
+    } catch {
+      /* leave pending; will retry on next poll */
+    }
+  }
+}
 
 export const contributionsRouter = Router();
 
@@ -92,6 +113,8 @@ contributionsRouter.get("/:campaignId/contributions", async (req, res) => {
     where: { OR: [{ id: campaignId }, { slug: campaignId }] },
   });
   if (!campaign) return res.status(404).json({ error: "Campagne introuvable" });
+
+  await reconcilePending(campaign.id); // confirm any paid-but-unnotified contributions
 
   const contributions = await prisma.contribution.findMany({
     where: { campaignId: campaign.id, status: "CONFIRMED" },
