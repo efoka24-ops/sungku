@@ -1,0 +1,1 @@
+﻿import{PrismaClient}from"@prisma/client";const p=new PrismaClient();p.campaign.findMany({select:{slug:true,moderationStatus:true,visibility:true},orderBy:{createdAt:"asc"}}).then(r=>{console.log("total="+r.length);r.forEach(c=>console.log(c.slug+" | "+c.moderationStatus+" | "+c.visibility));}).finally(()=>p.$disconnect());

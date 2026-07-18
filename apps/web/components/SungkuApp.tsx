@@ -112,6 +112,7 @@ const api = {
   // ── auth / accounts / admin ──
   post: (path: string, body: any, token?: string) => req("POST", path, body, token),
   put: (path: string, body: any, token?: string) => req("PUT", path, body, token),
+  del: (path: string, token?: string) => req("DELETE", path, undefined, token),
   get: (path: string, token?: string) => req("GET", path, undefined, token),
 };
 
@@ -262,9 +263,8 @@ export default function SungkuApp() {
     setView("home");
   }
 
-  // Show live (DB) campaigns which respect moderation; fall back to demo data
-  // only when the database is empty (fresh install).
-  const campaigns = live.length ? live : DEMO_CAMPAIGNS;
+  // The site reflects the database (managed from the back office). No demo fallback.
+  const campaigns = live;
 
   // Re-fetch when returning to the home view so moderation changes are reflected.
   useEffect(() => {
@@ -434,6 +434,12 @@ function Home({ campaigns, onOpen, onCreate }: { campaigns: Campaign[]; onOpen: 
         <h2 style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>Campagnes à la une</h2>
         <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 14 }}>{filtered.length} campagnes</span>
       </div>
+
+      {filtered.length === 0 && (
+        <div style={{ ...card, padding: 40, textAlign: "center", color: "rgba(255,255,255,0.5)" }}>
+          Aucune campagne pour le moment. Soyez le premier à en lancer une.
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 24 }}>
         {filtered.map((c) => (
@@ -876,6 +882,17 @@ function Dashboard({ campaign, user, token, onUser, onRequireAuth }: { campaign:
           Connectez-vous ou créez un compte organisateur (vérification par code e-mail) pour accéder au tableau de bord, aux retraits et à la modération.
         </p>
         <button onClick={onRequireAuth} style={{ ...violetBtn, padding: "14px 26px", fontSize: 15 }}>Se connecter / Créer un compte</button>
+      </div>
+    );
+  }
+
+  // No campaign yet (empty DB): show a friendly prompt instead of crashing.
+  if (!campaign) {
+    return (
+      <div style={{ maxWidth: 560, margin: "0 auto", padding: "80px 32px", textAlign: "center" }}>
+        <h1 style={{ fontSize: 30, fontWeight: 800, margin: "0 0 12px" }}>Tableau de bord organisateur</h1>
+        <p style={{ fontSize: 15, color: "rgba(255,255,255,0.55)", margin: "0 0 28px" }}>Aucune campagne pour le moment. Créez votre première campagne pour commencer.</p>
+        <span style={{ fontSize: 14, color: "rgba(255,255,255,0.4)" }}>Utilisez « Créer une campagne » dans le menu.</span>
       </div>
     );
   }
@@ -1336,6 +1353,11 @@ function AdminBackOffice({ user, token, onRequireAuth }: { user: AuthUser | null
     await api.post(`/admin/campaigns/${id}/moderate`, { status }, token || undefined);
     loadAll();
   }
+  async function removeCampaign(id: string, title: string) {
+    if (typeof window !== "undefined" && !window.confirm(`Supprimer définitivement « ${title} » ?`)) return;
+    await api.del(`/admin/campaigns/${id}`, token || undefined);
+    loadAll();
+  }
   async function setPartnerStatus(id: string, status: string) {
     await api.post(`/admin/partners/${id}/status`, { status }, token || undefined);
     loadAll();
@@ -1411,6 +1433,7 @@ function AdminBackOffice({ user, token, onRequireAuth }: { user: AuthUser | null
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => moderate(c.id, "APPROVED")} style={{ background: "#fff", color: "#000", border: "none", padding: "8px 14px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Approuver</button>
                 <button onClick={() => moderate(c.id, "REJECTED")} style={{ ...ghostBtn, padding: "8px 14px", fontSize: 12 }}>Rejeter</button>
+                <button onClick={() => removeCampaign(c.id, c.title)} style={{ background: "rgba(231,76,60,0.15)", border: "1px solid rgba(231,76,60,0.5)", color: "#E74C3C", padding: "8px 14px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Supprimer</button>
               </div>
             </div>
           ))}

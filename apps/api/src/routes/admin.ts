@@ -67,6 +67,17 @@ adminRouter.get("/campaigns", async (req, res) => {
   );
 });
 
+// Delete a campaign and its dependent rows (contributions, reports).
+adminRouter.delete("/campaigns/:id", async (req, res) => {
+  const { id } = req.params;
+  const campaign = await prisma.campaign.findUnique({ where: { id } });
+  if (!campaign) return res.status(404).json({ error: "Campagne introuvable" });
+  await prisma.report.deleteMany({ where: { campaignId: id } });
+  await prisma.contribution.deleteMany({ where: { campaignId: id } });
+  await prisma.campaign.delete({ where: { id } });
+  res.json({ deleted: true });
+});
+
 // Moderate a campaign
 adminRouter.post("/campaigns/:id/moderate", async (req, res) => {
   const { status } = req.body as { status: string };
