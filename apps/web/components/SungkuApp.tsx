@@ -1386,27 +1386,65 @@ const CAT_LABEL: Record<string, string> = {
   EDUCATION: "Éducation", ENTREPRISE: "Entreprise", TONTINE: "Tontine",
 };
 
-function BarChart({ data }: { data: { day: string; amount: number }[] }) {
+function compactFcfa(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1)}k`;
+  return `${n}`;
+}
+function shortDay(iso: string) {
+  const d = new Date(iso);
+  return `${d.getDate()}/${d.getMonth() + 1}`;
+}
+
+// Cumulative collection chart with axes, gridlines, area + line.
+function CumulativeChart({ data }: { data: { day: string; amount: number }[] }) {
   if (!data || data.length === 0) {
     return <p style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", margin: 0 }}>Aucune contribution confirmée sur la période.</p>;
   }
-  const max = Math.max(...data.map((d) => d.amount), 1);
+  // Build cumulative series
+  let run = 0;
+  const pts = data.map((d) => ({ day: d.day, value: (run += d.amount) }));
+  const W = 640, H = 260, padL = 56, padR = 16, padT = 12, padB = 28;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const maxY = Math.max(...pts.map((p) => p.value), 1);
+  const n = pts.length;
+  const x = (i: number) => padL + (n === 1 ? innerW / 2 : (i / (n - 1)) * innerW);
+  const y = (v: number) => padT + innerH - (v / maxY) * innerH;
+
+  const line = pts.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
+  const area = `${line} L${x(n - 1).toFixed(1)},${(padT + innerH).toFixed(1)} L${x(0).toFixed(1)},${(padT + innerH).toFixed(1)} Z`;
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * maxY);
+  const xIdx = n <= 1 ? [0] : [0, Math.floor((n - 1) / 2), n - 1];
+
   return (
-    <div>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 160 }}>
-        {data.map((d) => (
-          <div
-            key={d.day}
-            title={`${d.day} : ${fmt(d.amount)} FCFA`}
-            style={{ flex: 1, height: `${Math.max((d.amount / max) * 100, 1)}%`, minHeight: 2, background: "linear-gradient(180deg,#654DDF,#B4A8F5)", borderRadius: 4 }}
-          />
-        ))}
-      </div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
-        <span>{data[0].day}</span>
-        <span>{data[data.length - 1].day}</span>
-      </div>
-    </div>
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }} preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <linearGradient id="collectGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#654DDF" stopOpacity="0.45" />
+          <stop offset="100%" stopColor="#654DDF" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {/* Y gridlines + labels */}
+      {yTicks.map((t, i) => (
+        <g key={i}>
+          <line x1={padL} y1={y(t)} x2={W - padR} y2={y(t)} stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
+          <text x={padL - 8} y={y(t) + 4} textAnchor="end" fontSize="11" fill="rgba(255,255,255,0.4)">{compactFcfa(Math.round(t))}</text>
+        </g>
+      ))}
+      {/* Area + line */}
+      <path d={area} fill="url(#collectGrad)" />
+      <path d={line} fill="none" stroke="#B4A8F5" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+      {/* Points */}
+      {pts.map((p, i) => (
+        <circle key={i} cx={x(i)} cy={y(p.value)} r="2.5" fill="#B4A8F5">
+          <title>{`${p.day} : ${fmt(p.value)} FCFA cumulés`}</title>
+        </circle>
+      ))}
+      {/* X labels */}
+      {xIdx.map((i) => (
+        <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize="11" fill="rgba(255,255,255,0.4)">{shortDay(pts[i].day)}</text>
+      ))}
+    </svg>
   );
 }
 
@@ -1617,9 +1655,9 @@ function AdminBackOffice({ user, token, onRequireAuth }: { user: AuthUser | null
 
           {/* Evolution chart */}
           <div style={{ ...card, borderRadius: 16, padding: 24 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px" }}>Évolution des collectes</h3>
-            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", margin: "0 0 16px" }}>Contributions confirmées par jour (30 derniers jours)</p>
-            <BarChart data={series} />
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px" }}>Évolution cumulée des collectes</h3>
+            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", margin: "0 0 16px" }}>Total collecté cumulé (contributions confirmées, 30 derniers jours)</p>
+            <CumulativeChart data={series} />
           </div>
         </div>
       )}

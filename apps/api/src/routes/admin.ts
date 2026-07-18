@@ -2,6 +2,11 @@ import { Router } from "express";
 import QRCode from "qrcode";
 import { prisma } from "../prisma";
 import { requireAdmin, AuthedRequest } from "../auth";
+import { sendMail } from "../mailer";
+
+function fmtFcfa(n: number) {
+  return new Intl.NumberFormat("fr-FR").format(n) + " FCFA";
+}
 
 export const adminRouter = Router();
 
@@ -108,7 +113,34 @@ adminRouter.post("/withdrawals/:id/status", async (req, res) => {
   if (!["PENDING", "APPROVED", "REJECTED", "PAID"].includes(status)) {
     return res.status(400).json({ error: "Statut invalide" });
   }
-  const w = await prisma.withdrawal.update({ where: { id: req.params.id }, data: { status } });
+  const w = await prisma.withdrawal.update({
+    where: { id: req.params.id },
+    data: { status },
+    include: { user: { select: { email: true, name: true } } },
+  });
+
+  // Notify the organizer by e-mail when their withdrawal is approved or paid.
+  if ((status === "APPROVED" || status === "PAID") && w.user?.email) {
+    const dest = w.destination === "mobile_money" ? "votre compte Mobile Money" : "votre portefeuille Sungku";
+    const line =
+      status === "APPROVED"
+        ? `Votre demande de retrait de <strong>${fmtFcfa(w.amount)}</strong> a été <strong>approuvée</strong>. Le versement vers ${dest} sera effectué sous 24h.`
+        : `Votre retrait de <strong>${fmtFcfa(w.amount)}</strong> a été <strong>payé</strong> vers ${dest}.`;
+    void sendMail(
+      w.user.email,
+      status === "APPROVED" ? "Sungku, votre retrait est approuvé" : "Sungku, votre retrait a été payé",
+      `<div style="font-family:Arial,sans-serif;background:#000;color:#fff;padding:28px;border-radius:16px;max-width:460px;margin:auto;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
+          <div style="width:28px;height:28px;border-radius:999px;background:#654DDF;"></div>
+          <span style="font-size:17px;font-weight:800;">Sungku</span>
+        </div>
+        <p style="font-size:15px;">Bonjour ${w.user.name || ""},</p>
+        <p style="font-size:15px;color:#D8D2F5;">${line}</p>
+        <p style="color:#A0A0A0;font-size:13px;">Merci d'utiliser Sungku.</p>
+      </div>`
+    );
+  }
+
   res.json(w);
 });
 
