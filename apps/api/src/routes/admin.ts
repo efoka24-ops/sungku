@@ -78,6 +78,29 @@ adminRouter.delete("/campaigns/:id", async (req, res) => {
   res.json({ deleted: true });
 });
 
+// Edit / update a campaign's editable fields.
+adminRouter.put("/campaigns/:id", async (req, res) => {
+  const { id } = req.params;
+  const { title, description, category, targetAmount, deadline, beneficiary, visibility, coverImage } = req.body;
+  const campaign = await prisma.campaign.findUnique({ where: { id } });
+  if (!campaign) return res.status(404).json({ error: "Campagne introuvable" });
+
+  const updated = await prisma.campaign.update({
+    where: { id },
+    data: {
+      ...(title !== undefined ? { title } : {}),
+      ...(description !== undefined ? { description } : {}),
+      ...(category !== undefined ? { category } : {}),
+      ...(targetAmount !== undefined ? { targetAmount: Number(targetAmount) } : {}),
+      ...(deadline !== undefined ? { deadline: deadline ? new Date(deadline) : null } : {}),
+      ...(beneficiary !== undefined ? { beneficiary } : {}),
+      ...(visibility !== undefined ? { visibility: visibility === "PRIVEE" ? "PRIVEE" : "PUBLIQUE" } : {}),
+      ...(coverImage !== undefined ? { coverImage: coverImage || null } : {}),
+    },
+  });
+  res.json(updated);
+});
+
 // Moderate a campaign
 adminRouter.post("/campaigns/:id/moderate", async (req, res) => {
   const { status } = req.body as { status: string };

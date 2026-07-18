@@ -1416,6 +1416,55 @@ function AdminBackOffice({ user, token, onRequireAuth }: { user: AuthUser | null
     await api.del(`/admin/campaigns/${id}`, token || undefined);
     loadAll();
   }
+
+  // Edit a campaign
+  const [edit, setEdit] = useState<any>(null);
+  const [editErr, setEditErr] = useState<string | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+
+  async function openEdit(slug: string) {
+    setEditErr(null);
+    try {
+      const c = await api.get(`/campaigns/${slug}`);
+      setEdit({
+        id: c.id,
+        title: c.title || "",
+        description: c.description || "",
+        category: c.category || "PROJET_COMMUNAUTAIRE",
+        targetAmount: String(c.targetAmount ?? ""),
+        deadline: c.deadline ? String(c.deadline).slice(0, 10) : "",
+        beneficiary: c.beneficiary || "",
+        visibility: c.visibility || "PUBLIQUE",
+      });
+    } catch (e: any) {
+      setEditErr(e.message);
+    }
+  }
+  async function saveEdit() {
+    if (!edit) return;
+    setEditSaving(true);
+    setEditErr(null);
+    try {
+      await api.put(
+        `/admin/campaigns/${edit.id}`,
+        {
+          title: edit.title,
+          description: edit.description,
+          category: edit.category,
+          targetAmount: Number(String(edit.targetAmount).replace(/\s/g, "")) || 0,
+          deadline: edit.deadline || null,
+          beneficiary: edit.beneficiary,
+          visibility: edit.visibility,
+        },
+        token || undefined
+      );
+      setEdit(null);
+      loadAll();
+    } catch (e: any) {
+      setEditErr(e.message);
+    }
+    setEditSaving(false);
+  }
   async function setPartnerStatus(id: string, status: string) {
     await api.post(`/admin/partners/${id}/status`, { status }, token || undefined);
     loadAll();
@@ -1488,7 +1537,8 @@ function AdminBackOffice({ user, token, onRequireAuth }: { user: AuthUser | null
                 </p>
               </div>
               <span style={{ color: modColor(c.moderationStatus), fontWeight: 700, fontSize: 13 }}>{modLabel(c.moderationStatus)}</span>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button onClick={() => openEdit(c.slug)} style={{ ...ghostBtn, padding: "8px 14px", fontSize: 12, color: "#B4A8F5", borderColor: "rgba(101,77,223,0.5)" }}>Éditer</button>
                 <button onClick={() => moderate(c.id, "APPROVED")} style={{ background: "#fff", color: "#000", border: "none", padding: "8px 14px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Approuver</button>
                 <button onClick={() => moderate(c.id, "REJECTED")} style={{ ...ghostBtn, padding: "8px 14px", fontSize: 12 }}>Rejeter</button>
                 <button onClick={() => removeCampaign(c.id, c.title)} style={{ background: "rgba(231,76,60,0.15)", border: "1px solid rgba(231,76,60,0.5)", color: "#E74C3C", padding: "8px 14px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Supprimer</button>
@@ -1552,6 +1602,62 @@ function AdminBackOffice({ user, token, onRequireAuth }: { user: AuthUser | null
             ))}
           </div>
           <button onClick={saveFees} style={{ ...violetBtn, padding: "12px 20px", fontSize: 14, marginTop: 18 }}>Enregistrer les frais</button>
+        </div>
+      )}
+
+      {/* Edit campaign modal */}
+      {edit && (
+        <div onClick={() => setEdit(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 100, padding: 20, overflowY: "auto" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ ...card, borderRadius: 24, padding: 28, width: 560, maxWidth: "100%", marginTop: 40 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>Éditer la campagne</h2>
+              <button onClick={() => setEdit(null)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.5)", fontSize: 22, cursor: "pointer" }}>×</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <label style={label}>Titre</label>
+                <input value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} style={field} />
+              </div>
+              <div>
+                <label style={label}>Description</label>
+                <textarea value={edit.description} onChange={(e) => setEdit({ ...edit, description: e.target.value })} rows={3} style={{ ...field, resize: "none" }} />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={label}>Catégorie</label>
+                  <select value={edit.category} onChange={(e) => setEdit({ ...edit, category: e.target.value })} style={field}>
+                    {Object.keys(CAT_LABEL).map((k) => <option key={k} value={k}>{CAT_LABEL[k]}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={label}>Montant cible (FCFA)</label>
+                  <input value={edit.targetAmount} onChange={(e) => setEdit({ ...edit, targetAmount: e.target.value })} style={field} />
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={label}>Échéance</label>
+                  <input type="date" value={edit.deadline} onChange={(e) => setEdit({ ...edit, deadline: e.target.value })} style={field} />
+                </div>
+                <div>
+                  <label style={label}>Visibilité</label>
+                  <select value={edit.visibility} onChange={(e) => setEdit({ ...edit, visibility: e.target.value })} style={field}>
+                    <option value="PUBLIQUE">Publique</option>
+                    <option value="PRIVEE">Privée</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label style={label}>Bénéficiaire</label>
+                <input value={edit.beneficiary} onChange={(e) => setEdit({ ...edit, beneficiary: e.target.value })} style={field} />
+              </div>
+              {editErr && <p style={{ color: "#E74C3C", fontSize: 13, margin: 0 }}>{editErr}</p>}
+              <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+                <button onClick={saveEdit} disabled={editSaving} style={{ ...violetBtn, flex: 1, padding: 13, fontSize: 14, opacity: editSaving ? 0.6 : 1 }}>{editSaving ? "Enregistrement…" : "Enregistrer"}</button>
+                <button onClick={() => setEdit(null)} style={{ ...ghostBtn, flex: 1, padding: 13, fontSize: 14 }}>Annuler</button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
