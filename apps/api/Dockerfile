@@ -16,5 +16,5 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY package*.json ./
 EXPOSE 4000
-# Sync schema (idempotent) then start. `;` so the app starts even if push is a no-op/warns.
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss; node dist/index.js"]
+# Schema is provisioned separately (prisma db push from local/CI). Just start the server.
+CMD ["node", "dist/index.js"]
