@@ -1,11 +1,30 @@
 import { Router } from "express";
+import QRCode from "qrcode";
 import { prisma } from "../prisma";
-import { requireAdmin } from "../auth";
+import { requireAdmin, AuthedRequest } from "../auth";
 
 export const adminRouter = Router();
 
 // All admin endpoints require an authenticated admin account.
 adminRouter.use(requireAdmin);
+
+function slugify(title: string) {
+  return (
+    title
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "") +
+    "-" +
+    Math.random().toString(36).slice(2, 7)
+  );
+}
+
+function csvEscape(v: unknown) {
+  const s = String(v ?? "");
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
 
 const DEFAULT_FEES: Record<string, number> = {
   SANTE: 0,
@@ -75,6 +94,96 @@ adminRouter.delete("/campaigns/:id", async (req, res) => {
   await prisma.report.deleteMany({ where: { campaignId: id } });
   await prisma.contribution.deleteMany({ where: { campaignId: id } });
   await prisma.campaign.delete({ where: { id } });
+  res.json({ deleted: true });
+});
+
+// Admin creates a campaign directly (auto-approved).
+adminRouter.post("/campaigns", async (req: AuthedRequest, res) => {
+  const { title, description, category, targetAmount, deadline, beneficiary, visibility, coverImage } = req.body;
+  if (!title || !description || !category || !targetAmount || !beneficiary) {
+    return res.status(400).json({ error: "Champs requis manquants" });
+  }
+  const slug = slugify(title);
+  const shareUrl = `${process.env.APP_PUBLIC_URL || "http://localhost:4000"}/c/${slug}`;
+  const qrCodeDataUrl = await QRCode.toDataURL(shareUrl, { color: { dark: "#654DDF", light: "#00000000" } });
+  const campaign = await prisma.campaign.create({
+    data: {
+      slug,
+      title,
+      description,
+      category,
+      targetAmount: Number(targetAmount),
+      deadline: deadline ? new Date(deadline) : null,
+      coverImage: coverImage || null,
+      beneficiary,
+      visibility: visibility === "PRIVEE" ? "PRIVEE" : "PUBLIQUE",
+      qrCodeDataUrl,
+      organizerId: req.userId || null,
+      moderationStatus: "APPROVED",
+    },
+  });
+  res.status(201).json(campaign);
+});
+
+// Export all contributions as CSV.
+adminRouter.get("/export/contributions.csv", async (_req, res) => {
+  const rows = await prisma.contribution.findMany({
+    include: { campaign: { select: { title: true, slug: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+  const header = "date,campagne,slug,contributeur,anonyme,montant,devise,canal,statut,telephone,message";
+  const lines = rows.map((r) =>
+    [
+      r.createdAt.toISOString(),
+      csvEscape(r.campaign.title),
+      r.campaign.slug,
+      csvEscape(r.isAnonymous ? "Anonyme" : r.contributorName || ""),
+      r.isAnonymous,
+      r.amount,
+      "XAF",
+      r.channel,
+      r.status,
+      r.phoneNumber || "",
+      csvEscape(r.message || ""),
+    ].join(",")
+  );
+  const csv = [header, ...lines].join("\n");
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", "attachment; filename=contributions.csv");
+  res.send("﻿" + csv); // BOM for Excel UTF-8
+});
+
+// ── Users management ──
+adminRouter.get("/users", async (_req, res) => {
+  const users = await prisma.user.findMany({
+    orderBy: { createdAt: "desc" },
+    include: { _count: { select: { campaigns: true } } },
+  });
+  res.json(
+    users.map((u) => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      kycStatus: u.kycStatus,
+      isAdmin: u.isAdmin,
+      campaigns: u._count.campaigns,
+      createdAt: u.createdAt,
+    }))
+  );
+});
+
+adminRouter.post("/users/:id/admin", async (req, res) => {
+  const { isAdmin } = req.body as { isAdmin: boolean };
+  const u = await prisma.user.update({ where: { id: req.params.id }, data: { isAdmin: Boolean(isAdmin) } });
+  res.json({ id: u.id, isAdmin: u.isAdmin });
+});
+
+adminRouter.delete("/users/:id", async (req: AuthedRequest, res) => {
+  if (req.params.id === req.userId) {
+    return res.status(400).json({ error: "Vous ne pouvez pas supprimer votre propre compte." });
+  }
+  await prisma.campaign.updateMany({ where: { organizerId: req.params.id }, data: { organizerId: null } });
+  await prisma.user.delete({ where: { id: req.params.id } });
   res.json({ deleted: true });
 });
 

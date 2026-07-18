@@ -1387,23 +1387,58 @@ const CAT_LABEL: Record<string, string> = {
 };
 
 function AdminBackOffice({ user, token, onRequireAuth }: { user: AuthUser | null; token: string | null; onRequireAuth: () => void }) {
-  const [tab, setTab] = useState<"overview" | "campaigns" | "partners" | "reports" | "fees">("overview");
+  const [tab, setTab] = useState<"overview" | "campaigns" | "users" | "partners" | "reports" | "fees">("overview");
   const [stats, setStats] = useState<any>(null);
   const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
   const [partners, setPartners] = useState<any[]>([]);
   const [reports, setReports] = useState<any[]>([]);
   const [fees, setFees] = useState<Record<string, number>>({});
 
   async function loadAll() {
     if (!token) return;
-    const [s, c, p, r, f] = await Promise.all([
+    const [s, c, u, p, r, f] = await Promise.all([
       api.get("/admin/stats", token),
       api.get("/admin/campaigns", token),
+      api.get("/admin/users", token),
       api.get("/admin/partners", token),
       api.get("/admin/reports", token),
       api.get("/admin/fees", token),
     ]);
-    setStats(s); setCampaigns(c); setPartners(p); setReports(r); setFees(f);
+    setStats(s); setCampaigns(c); setUsers(u); setPartners(p); setReports(r); setFees(f);
+  }
+
+  // CSV export (needs the auth header, so fetch + blob download)
+  async function exportContributionsCsv() {
+    const res = await fetch(`${API_BASE}/admin/export/contributions.csv`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "contributions.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function toggleUserAdmin(id: string, isAdmin: boolean) {
+    await api.post(`/admin/users/${id}/admin`, { isAdmin }, token || undefined);
+    loadAll();
+  }
+  async function deleteUser(id: string, email: string) {
+    if (typeof window !== "undefined" && !window.confirm(`Supprimer le compte ${email} ?`)) return;
+    try {
+      await api.del(`/admin/users/${id}`, token || undefined);
+      loadAll();
+    } catch (e: any) {
+      alert(e.message);
+    }
+  }
+
+  function openCreate() {
+    setEditErr(null);
+    setEdit({ id: null, title: "", description: "", category: "PROJET_COMMUNAUTAIRE", targetAmount: "", deadline: "", beneficiary: "", visibility: "PUBLIQUE" });
   }
   useEffect(() => { if (user?.isAdmin) loadAll(); }, [user, token]);
 
@@ -1444,20 +1479,21 @@ function AdminBackOffice({ user, token, onRequireAuth }: { user: AuthUser | null
     if (!edit) return;
     setEditSaving(true);
     setEditErr(null);
+    const payload = {
+      title: edit.title,
+      description: edit.description,
+      category: edit.category,
+      targetAmount: Number(String(edit.targetAmount).replace(/\s/g, "")) || 0,
+      deadline: edit.deadline || null,
+      beneficiary: edit.beneficiary,
+      visibility: edit.visibility,
+    };
     try {
-      await api.put(
-        `/admin/campaigns/${edit.id}`,
-        {
-          title: edit.title,
-          description: edit.description,
-          category: edit.category,
-          targetAmount: Number(String(edit.targetAmount).replace(/\s/g, "")) || 0,
-          deadline: edit.deadline || null,
-          beneficiary: edit.beneficiary,
-          visibility: edit.visibility,
-        },
-        token || undefined
-      );
+      if (edit.id) {
+        await api.put(`/admin/campaigns/${edit.id}`, payload, token || undefined);
+      } else {
+        await api.post(`/admin/campaigns`, payload, token || undefined);
+      }
       setEdit(null);
       loadAll();
     } catch (e: any) {
@@ -1504,7 +1540,7 @@ function AdminBackOffice({ user, token, onRequireAuth }: { user: AuthUser | null
       <p style={{ fontSize: 16, color: "rgba(255,255,255,0.55)", margin: "0 0 28px" }}>Gestion globale de la plateforme Sungku.</p>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 28 }}>
-        {[["overview", "Vue d'ensemble"], ["campaigns", "Modération"], ["partners", "Partenaires"], ["reports", "Signalements"], ["fees", "Frais"]].map(([t, l]) => (
+        {[["overview", "Vue d'ensemble"], ["campaigns", "Modération"], ["users", "Utilisateurs"], ["partners", "Partenaires"], ["reports", "Signalements"], ["fees", "Frais"]].map(([t, l]) => (
           <button key={t} onClick={() => setTab(t as any)} style={tabBtn(t)}>{l}</button>
         ))}
       </div>
@@ -1526,6 +1562,10 @@ function AdminBackOffice({ user, token, onRequireAuth }: { user: AuthUser | null
 
       {tab === "campaigns" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+            <button onClick={openCreate} style={{ ...violetBtn, padding: "10px 18px", fontSize: 13 }}>+ Créer une campagne</button>
+            <button onClick={exportContributionsCsv} style={{ ...ghostBtn, padding: "10px 18px", fontSize: 13 }}>Exporter les contributions (CSV)</button>
+          </div>
           {campaigns.length === 0 && <p style={{ color: "rgba(255,255,255,0.5)" }}>Aucune campagne.</p>}
           {campaigns.map((c) => (
             <div key={c.id} style={{ ...card, padding: 18, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
@@ -1542,6 +1582,24 @@ function AdminBackOffice({ user, token, onRequireAuth }: { user: AuthUser | null
                 <button onClick={() => moderate(c.id, "APPROVED")} style={{ background: "#fff", color: "#000", border: "none", padding: "8px 14px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Approuver</button>
                 <button onClick={() => moderate(c.id, "REJECTED")} style={{ ...ghostBtn, padding: "8px 14px", fontSize: 12 }}>Rejeter</button>
                 <button onClick={() => removeCampaign(c.id, c.title)} style={{ background: "rgba(231,76,60,0.15)", border: "1px solid rgba(231,76,60,0.5)", color: "#E74C3C", padding: "8px 14px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Supprimer</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === "users" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {users.length === 0 && <p style={{ color: "rgba(255,255,255,0.5)" }}>Aucun utilisateur.</p>}
+          {users.map((u) => (
+            <div key={u.id} style={{ ...card, padding: 18, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+              <div style={{ minWidth: 240, flex: 1 }}>
+                <p style={{ margin: "0 0 4px", fontWeight: 700 }}>{u.name} {u.isAdmin && <span style={{ color: "#B4A8F5", fontSize: 12 }}>· Admin</span>}</p>
+                <p style={{ margin: 0, fontSize: 13, color: "rgba(255,255,255,0.5)" }}>{u.email} · KYC {u.kycStatus} · {u.campaigns} campagne(s)</p>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button onClick={() => toggleUserAdmin(u.id, !u.isAdmin)} style={{ ...ghostBtn, padding: "8px 14px", fontSize: 12 }}>{u.isAdmin ? "Retirer admin" : "Rendre admin"}</button>
+                <button onClick={() => deleteUser(u.id, u.email)} style={{ background: "rgba(231,76,60,0.15)", border: "1px solid rgba(231,76,60,0.5)", color: "#E74C3C", padding: "8px 14px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Supprimer</button>
               </div>
             </div>
           ))}
@@ -1610,7 +1668,7 @@ function AdminBackOffice({ user, token, onRequireAuth }: { user: AuthUser | null
         <div onClick={() => setEdit(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 100, padding: 20, overflowY: "auto" }}>
           <div onClick={(e) => e.stopPropagation()} style={{ ...card, borderRadius: 24, padding: 28, width: 560, maxWidth: "100%", marginTop: 40 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>Éditer la campagne</h2>
+              <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>{edit.id ? "Éditer la campagne" : "Créer une campagne"}</h2>
               <button onClick={() => setEdit(null)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.5)", fontSize: 22, cursor: "pointer" }}>×</button>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
