@@ -1386,26 +1386,62 @@ const CAT_LABEL: Record<string, string> = {
   EDUCATION: "Éducation", ENTREPRISE: "Entreprise", TONTINE: "Tontine",
 };
 
+function BarChart({ data }: { data: { day: string; amount: number }[] }) {
+  if (!data || data.length === 0) {
+    return <p style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", margin: 0 }}>Aucune contribution confirmée sur la période.</p>;
+  }
+  const max = Math.max(...data.map((d) => d.amount), 1);
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 160 }}>
+        {data.map((d) => (
+          <div
+            key={d.day}
+            title={`${d.day} : ${fmt(d.amount)} FCFA`}
+            style={{ flex: 1, height: `${Math.max((d.amount / max) * 100, 1)}%`, minHeight: 2, background: "linear-gradient(180deg,#654DDF,#B4A8F5)", borderRadius: 4 }}
+          />
+        ))}
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
+        <span>{data[0].day}</span>
+        <span>{data[data.length - 1].day}</span>
+      </div>
+    </div>
+  );
+}
+
 function AdminBackOffice({ user, token, onRequireAuth }: { user: AuthUser | null; token: string | null; onRequireAuth: () => void }) {
-  const [tab, setTab] = useState<"overview" | "campaigns" | "users" | "partners" | "reports" | "fees">("overview");
+  const [tab, setTab] = useState<"overview" | "campaigns" | "users" | "partners" | "reports" | "withdrawals" | "fees">("overview");
   const [stats, setStats] = useState<any>(null);
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [partners, setPartners] = useState<any[]>([]);
   const [reports, setReports] = useState<any[]>([]);
   const [fees, setFees] = useState<Record<string, number>>({});
+  const [withdrawals, setWithdrawals] = useState<any[]>([]);
+  const [notifs, setNotifs] = useState<{ total: number; items: { type: string; label: string; count: number }[] }>({ total: 0, items: [] });
+  const [series, setSeries] = useState<{ day: string; amount: number }[]>([]);
 
   async function loadAll() {
     if (!token) return;
-    const [s, c, u, p, r, f] = await Promise.all([
+    const [s, c, u, p, r, f, w, n, ts] = await Promise.all([
       api.get("/admin/stats", token),
       api.get("/admin/campaigns", token),
       api.get("/admin/users", token),
       api.get("/admin/partners", token),
       api.get("/admin/reports", token),
       api.get("/admin/fees", token),
+      api.get("/admin/withdrawals", token),
+      api.get("/admin/notifications", token),
+      api.get("/admin/timeseries", token),
     ]);
     setStats(s); setCampaigns(c); setUsers(u); setPartners(p); setReports(r); setFees(f);
+    setWithdrawals(w); setNotifs(n); setSeries(ts);
+  }
+
+  async function setWithdrawalStatus(id: string, status: string) {
+    await api.post(`/admin/withdrawals/${id}/status`, { status }, token || undefined);
+    loadAll();
   }
 
   // CSV export (needs the auth header, so fetch + blob download)
@@ -1540,23 +1576,51 @@ function AdminBackOffice({ user, token, onRequireAuth }: { user: AuthUser | null
       <p style={{ fontSize: 16, color: "rgba(255,255,255,0.55)", margin: "0 0 28px" }}>Gestion globale de la plateforme Sungku.</p>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 28 }}>
-        {[["overview", "Vue d'ensemble"], ["campaigns", "Modération"], ["users", "Utilisateurs"], ["partners", "Partenaires"], ["reports", "Signalements"], ["fees", "Frais"]].map(([t, l]) => (
+        {[["overview", "Vue d'ensemble"], ["campaigns", "Modération"], ["users", "Utilisateurs"], ["partners", "Partenaires"], ["reports", "Signalements"], ["withdrawals", "Retraits"], ["fees", "Frais"]].map(([t, l]) => (
           <button key={t} onClick={() => setTab(t as any)} style={tabBtn(t)}>{l}</button>
         ))}
       </div>
 
       {tab === "overview" && stats && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 16 }}>
-          {[
-            ["Campagnes", stats.campaigns], ["Comptes", stats.users], ["Partenaires", stats.partners],
-            ["Total collecté", `${fmt(stats.totalRaised)} ${CURRENCY}`], ["Contributions", stats.contributions],
-            ["En modération", stats.pendingModeration], ["Signalements ouverts", stats.openReports],
-          ].map(([l, v]) => (
-            <div key={l as string} style={{ ...card, borderRadius: 16, padding: 22 }}>
-              <p style={{ margin: "0 0 6px", fontSize: 13, color: "rgba(255,255,255,0.45)" }}>{l}</p>
-              <p style={{ margin: 0, fontSize: 24, fontWeight: 800 }}>{v}</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          {/* Notifications */}
+          {notifs.total > 0 && (
+            <div style={{ ...card, borderRadius: 16, padding: 20, border: "1px solid rgba(243,156,18,0.35)" }}>
+              <p style={{ margin: "0 0 12px", fontSize: 14, fontWeight: 700, color: "#F39C12" }}>🔔 {notifs.total} action(s) en attente</p>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                {notifs.items.map((it) => (
+                  <button
+                    key={it.type}
+                    onClick={() => setTab(it.type === "moderation" ? "campaigns" : it.type === "reports" ? "reports" : it.type === "withdrawals" ? "withdrawals" : "partners")}
+                    style={{ ...ghostBtn, padding: "8px 14px", fontSize: 13 }}
+                  >
+                    <strong style={{ color: "#F39C12" }}>{it.count}</strong> {it.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          ))}
+          )}
+
+          {/* Stat tiles */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 16 }}>
+            {[
+              ["Campagnes", stats.campaigns], ["Comptes", stats.users], ["Partenaires", stats.partners],
+              ["Total collecté", `${fmt(stats.totalRaised)} ${CURRENCY}`], ["Contributions", stats.contributions],
+              ["En modération", stats.pendingModeration], ["Signalements", stats.openReports], ["Retraits à valider", stats.pendingWithdrawals],
+            ].map(([l, v]) => (
+              <div key={l as string} style={{ ...card, borderRadius: 16, padding: 22 }}>
+                <p style={{ margin: "0 0 6px", fontSize: 13, color: "rgba(255,255,255,0.45)" }}>{l}</p>
+                <p style={{ margin: 0, fontSize: 24, fontWeight: 800 }}>{v}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Evolution chart */}
+          <div style={{ ...card, borderRadius: 16, padding: 24 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px" }}>Évolution des collectes</h3>
+            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", margin: "0 0 16px" }}>Contributions confirmées par jour (30 derniers jours)</p>
+            <BarChart data={series} />
+          </div>
         </div>
       )}
 
@@ -1640,6 +1704,28 @@ function AdminBackOffice({ user, token, onRequireAuth }: { user: AuthUser | null
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => setReportStatus(r.id, "RESOLVED")} style={{ background: "#fff", color: "#000", border: "none", padding: "8px 14px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Résolu</button>
                 <button onClick={() => setReportStatus(r.id, "DISMISSED")} style={{ ...ghostBtn, padding: "8px 14px", fontSize: 12 }}>Rejeter</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === "withdrawals" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {withdrawals.length === 0 && <p style={{ color: "rgba(255,255,255,0.5)" }}>Aucune demande de retrait.</p>}
+          {withdrawals.map((w) => (
+            <div key={w.id} style={{ ...card, padding: 18, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+              <div style={{ minWidth: 240, flex: 1 }}>
+                <p style={{ margin: "0 0 4px", fontWeight: 700 }}>{fmt(w.amount)} {CURRENCY} · {w.destination === "mobile_money" ? "Mobile Money" : "Portefeuille Sungku"}</p>
+                <p style={{ margin: 0, fontSize: 13, color: "rgba(255,255,255,0.5)" }}>{w.user?.name} · {w.user?.email}{w.user?.withdrawPhone ? ` · ${w.user.withdrawPhone}` : ""}</p>
+              </div>
+              <span style={{ fontWeight: 700, fontSize: 13, color: w.status === "PAID" || w.status === "APPROVED" ? "#2ECC71" : w.status === "REJECTED" ? "#E74C3C" : "#F39C12" }}>
+                {w.status === "PENDING" ? "En attente" : w.status === "APPROVED" ? "Approuvé" : w.status === "PAID" ? "Payé" : "Rejeté"}
+              </span>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button onClick={() => setWithdrawalStatus(w.id, "APPROVED")} style={{ background: "#fff", color: "#000", border: "none", padding: "8px 14px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Approuver</button>
+                <button onClick={() => setWithdrawalStatus(w.id, "PAID")} style={{ background: "rgba(46,204,113,0.15)", border: "1px solid rgba(46,204,113,0.5)", color: "#2ECC71", padding: "8px 14px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Marquer payé</button>
+                <button onClick={() => setWithdrawalStatus(w.id, "REJECTED")} style={{ ...ghostBtn, padding: "8px 14px", fontSize: 12 }}>Rejeter</button>
               </div>
             </div>
           ))}

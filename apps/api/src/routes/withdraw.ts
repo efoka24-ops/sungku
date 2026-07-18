@@ -32,11 +32,20 @@ withdrawRouter.post("/confirm", requireAuth, async (req: AuthedRequest, res) => 
     return res.status(400).json({ error: e.message });
   }
 
-  // In production this would trigger a Camoo cashout to the organizer.
+  // Persist the request so an admin can validate it from the back office.
+  await prisma.withdrawal.create({
+    data: {
+      userId: user.id,
+      amount: Number(meta?.amount) || 0,
+      destination: meta?.destination || "wallet",
+      status: "PENDING",
+    },
+  });
+
   res.json({
-    status: "PROCESSING",
+    status: "PENDING",
     amount: meta?.amount,
     destination: meta?.destination,
-    message: "Demande de retrait confirmée. Traitement sous 24h.",
+    message: "Demande de retrait confirmée. En attente de validation (sous 24h).",
   });
 });

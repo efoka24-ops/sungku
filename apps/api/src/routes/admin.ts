@@ -37,14 +37,17 @@ const DEFAULT_FEES: Record<string, number> = {
 
 // Overview stats
 adminRouter.get("/stats", async (_req, res) => {
-  const [campaigns, users, partners, contributions, pendingMod, openReports] = await Promise.all([
-    prisma.campaign.count(),
-    prisma.user.count(),
-    prisma.partner.count(),
-    prisma.contribution.findMany({ where: { status: "CONFIRMED" }, select: { amount: true } }),
-    prisma.campaign.count({ where: { moderationStatus: "PENDING" } }),
-    prisma.report.count({ where: { status: "OPEN" } }),
-  ]);
+  const [campaigns, users, partners, contributions, pendingMod, openReports, pendingWithdrawals, pendingPartners] =
+    await Promise.all([
+      prisma.campaign.count(),
+      prisma.user.count(),
+      prisma.partner.count(),
+      prisma.contribution.findMany({ where: { status: "CONFIRMED" }, select: { amount: true } }),
+      prisma.campaign.count({ where: { moderationStatus: "PENDING" } }),
+      prisma.report.count({ where: { status: "OPEN" } }),
+      prisma.withdrawal.count({ where: { status: "PENDING" } }),
+      prisma.partner.count({ where: { status: "PENDING" } }),
+    ]);
   const totalRaised = contributions.reduce((s, c) => s + c.amount, 0);
   res.json({
     campaigns,
@@ -54,7 +57,59 @@ adminRouter.get("/stats", async (_req, res) => {
     contributions: contributions.length,
     pendingModeration: pendingMod,
     openReports,
+    pendingWithdrawals,
+    pendingPartners,
   });
+});
+
+// Notifications: actionable items for the admin.
+adminRouter.get("/notifications", async (_req, res) => {
+  const [pendingMod, openReports, pendingWithdrawals, pendingPartners] = await Promise.all([
+    prisma.campaign.count({ where: { moderationStatus: "PENDING" } }),
+    prisma.report.count({ where: { status: "OPEN" } }),
+    prisma.withdrawal.count({ where: { status: "PENDING" } }),
+    prisma.partner.count({ where: { status: "PENDING" } }),
+  ]);
+  const items: { type: string; label: string; count: number }[] = [];
+  if (pendingMod) items.push({ type: "moderation", label: "campagne(s) à modérer", count: pendingMod });
+  if (openReports) items.push({ type: "reports", label: "signalement(s) ouvert(s)", count: openReports });
+  if (pendingWithdrawals) items.push({ type: "withdrawals", label: "retrait(s) à valider", count: pendingWithdrawals });
+  if (pendingPartners) items.push({ type: "partners", label: "partenaire(s) à valider", count: pendingPartners });
+  res.json({ total: items.reduce((s, i) => s + i.count, 0), items });
+});
+
+// Daily confirmed collection totals (last 30 days) for the evolution chart.
+adminRouter.get("/timeseries", async (_req, res) => {
+  const since = new Date(Date.now() - 30 * 86400000);
+  const rows = await prisma.contribution.findMany({
+    where: { status: "CONFIRMED", createdAt: { gte: since } },
+    select: { amount: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const byDay = new Map<string, number>();
+  for (const r of rows) {
+    const d = r.createdAt.toISOString().slice(0, 10);
+    byDay.set(d, (byDay.get(d) || 0) + r.amount);
+  }
+  res.json(Array.from(byDay.entries()).map(([day, amount]) => ({ day, amount })));
+});
+
+// ── Withdrawals management ──
+adminRouter.get("/withdrawals", async (_req, res) => {
+  const rows = await prisma.withdrawal.findMany({
+    orderBy: { createdAt: "desc" },
+    include: { user: { select: { name: true, email: true, withdrawPhone: true } } },
+  });
+  res.json(rows);
+});
+
+adminRouter.post("/withdrawals/:id/status", async (req, res) => {
+  const { status } = req.body as { status: string };
+  if (!["PENDING", "APPROVED", "REJECTED", "PAID"].includes(status)) {
+    return res.status(400).json({ error: "Statut invalide" });
+  }
+  const w = await prisma.withdrawal.update({ where: { id: req.params.id }, data: { status } });
+  res.json(w);
 });
 
 // All campaigns with moderation + report counts
