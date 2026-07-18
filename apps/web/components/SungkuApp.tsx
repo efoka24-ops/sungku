@@ -488,20 +488,37 @@ function CampaignView({ campaign, onBack, onContributed }: { campaign: Campaign;
   const finalAmount = custom ? parseInt(custom.replace(/\s/g, "")) || 0 : preset ?? 0;
   const pct = campaign.goal ? Math.round((raised / campaign.goal) * 100) : 0;
 
+  // Live refresh: poll the campaign total + contributions so the gauge and the
+  // contributor wall update in real time (including webhook-confirmed payments).
   useEffect(() => {
-    if (campaign.live) {
-      api.contributions(campaign.slug || campaign.id).then((list: any[]) => {
+    if (!campaign.live) return;
+    const key = campaign.slug || campaign.id;
+    let active = true;
+    async function refreshCampaign() {
+      try {
+        const [c, list] = await Promise.all([api.get(`/campaigns/${key}`), api.contributions(key)]);
+        if (!active) return;
+        setRaised(c.collectedAmount ?? 0);
+        setContributors(c.contributorCount ?? 0);
         setWall(
-          list.map((c) => ({
-            name: c.isAnonymous ? "Anonyme" : c.contributorName || "Anonyme",
-            amount: fmt(c.amount),
-            method: c.channel,
-            msg: c.message || "",
+          (list as any[]).map((x) => ({
+            name: x.isAnonymous ? "Anonyme" : x.contributorName || "Anonyme",
+            amount: fmt(x.amount),
+            method: x.channel,
+            msg: x.message || "",
             time: "récemment",
           }))
         );
-      });
+      } catch {
+        /* keep last values */
+      }
     }
+    refreshCampaign();
+    const t = setInterval(refreshCampaign, 4000);
+    return () => {
+      active = false;
+      clearInterval(t);
+    };
   }, [campaign]);
 
   async function contribute() {
@@ -518,8 +535,8 @@ function CampaignView({ campaign, onBack, onContributed }: { campaign: Campaign;
     } catch {
       /* demo campaign or API offline */
     }
-    setRaised((r) => r + finalAmount);
-    setContributors((n) => n + 1);
+    // The gauge reflects only confirmed money; the poll updates it once the
+    // payment is confirmed (instantly for card, after the webhook for mobile money).
     setContributed(true);
     setSubmitting(false);
   }
