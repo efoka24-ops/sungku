@@ -42,9 +42,14 @@ export async function consumeOtp(email: string, purpose: string, code: string): 
   return token.meta ? JSON.parse(token.meta) : null;
 }
 
-// In non-production, expose the OTP so automated tests can complete the flow.
+// Expose the OTP in the API response when:
+//  - not in production (dev/tests), OR
+//  - OTP_EXPOSE=true (production fallback when e-mail delivery is unreliable).
+// SECURITY: with OTP_EXPOSE=true, anyone calling the API can read the code and log
+// into any account. Use only as a temporary fallback; turn off once e-mail works.
 export function devCode(code: string): string | undefined {
-  return process.env.NODE_ENV !== "production" ? code : undefined;
+  const expose = process.env.NODE_ENV !== "production" || process.env.OTP_EXPOSE === "true";
+  return expose ? code : undefined;
 }
 
 export function signToken(userId: string): string {

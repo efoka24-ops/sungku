@@ -29,9 +29,9 @@ test.describe("Profil organisateur", () => {
     await page.getByPlaceholder("Montant (FCFA)").fill("100000");
     await page.getByRole("button", { name: "Demander le code de confirmation" }).click();
 
-    const info = page.locator("text=/code test : \\d{6}/");
+    const info = page.locator("text=/code\\s*:\\s*\\d{6}/");
     await expect(info).toBeVisible({ timeout: 10_000 });
-    const code = ((await info.textContent()) || "").match(/code test : (\d{6})/)?.[1];
+    const code = ((await info.textContent()) || "").match(/code\s*:\s*(\d{6})/)?.[1];
     await page.getByPlaceholder("Code de retrait").fill(code!);
     await page.getByRole("button", { name: "Confirmer le retrait" }).click();
     await expect(page.getByText(/Traitement sous 24h/)).toBeVisible({ timeout: 10_000 });

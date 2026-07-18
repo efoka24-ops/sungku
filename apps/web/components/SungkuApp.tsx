@@ -945,7 +945,7 @@ function Dashboard({ campaign, user, token, onUser, onRequireAuth }: { campaign:
             <p style={{ fontSize: 14, color: "#2ECC71" }}>{withdrawMsg}</p>
           ) : withdrawStep === "otp" ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <p style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", margin: 0 }}>Un code de confirmation distinct a été envoyé à votre e-mail (double validation).{withdrawDev ? ` (code test : ${withdrawDev})` : ""}</p>
+              <p style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", margin: 0 }}>Un code de confirmation distinct a été envoyé à votre e-mail (double validation).{withdrawDev ? ` Votre code : ${withdrawDev}` : ""}</p>
               <input value={withdrawCode} onChange={(e) => setWithdrawCode(e.target.value)} placeholder="Code de retrait" style={{ boxSizing: "border-box", background: "#000", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", padding: "12px 14px", borderRadius: 10, fontSize: 14, letterSpacing: 4 }} />
               <button onClick={confirmWithdraw} style={{ ...violetBtn, padding: 12, fontSize: 14 }}>Confirmer le retrait</button>
               <button onClick={() => setWithdrawStep("form")} style={{ ...ghostBtn, padding: 10, fontSize: 13 }}>Annuler</button>
@@ -1217,8 +1217,8 @@ function AuthModal({ onClose, onAuthed }: { onClose: () => void; onAuthed: (toke
           ? await api.post("/auth/register", { name, email, phone })
           : await api.post("/auth/login", { email });
       const base = mode === "register" ? "Un code de vérification a été envoyé à votre e-mail." : "Un code de connexion a été envoyé à votre e-mail.";
-      // devCode is only present outside production (used by automated tests).
-      setInfo(r.devCode ? `${base} (code test : ${r.devCode})` : base);
+      // devCode is present in dev, or in prod when OTP_EXPOSE=true (e-mail fallback).
+      setInfo(r.devCode ? `${base} Votre code : ${r.devCode}` : base);
       setStep("otp");
     } catch (e: any) {
       setErr(e.message);
