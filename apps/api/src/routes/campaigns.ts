@@ -25,6 +25,7 @@ campaignsRouter.get("/", async (req, res) => {
   const campaigns = await prisma.campaign.findMany({
     where: {
       visibility: "PUBLIQUE",
+      isActive: true,
       moderationStatus: "APPROVED", // only moderated-approved campaigns are public
       ...(category ? { category: category as any } : {}),
       ...(q ? { title: { contains: q } } : {}),
@@ -99,6 +100,23 @@ campaignsRouter.get("/:id", async (req, res) => {
 });
 
 // Public: report a campaign (adds to the moderation queue)
+// Organizer toggles their own campaign active status
+campaignsRouter.post("/:id/toggle-active", requireAuth, async (req: AuthedRequest, res) => {
+  const campaign = await prisma.campaign.findFirst({
+    where: { OR: [{ id: req.params.id }, { slug: req.params.id }] },
+  });
+  if (!campaign) return res.status(404).json({ error: "Campagne introuvable" });
+  if (campaign.organizerId !== req.userId) {
+    return res.status(403).json({ error: "Seul le créateur peut désactiver cette campagne" });
+  }
+  const { isActive } = req.body as { isActive: boolean };
+  if (typeof isActive !== "boolean") {
+    return res.status(400).json({ error: "isActive (boolean) requis" });
+  }
+  const updated = await prisma.campaign.update({ where: { id: campaign.id }, data: { isActive } });
+  res.json({ id: updated.id, isActive: updated.isActive });
+});
+
 campaignsRouter.post("/:id/report", async (req, res) => {
   const { reason, reporterEmail } = req.body;
   if (!reason) return res.status(400).json({ error: "Motif requis" });

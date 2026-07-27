@@ -1038,6 +1038,7 @@ function Dashboard({ campaign, user, token, onUser, onRequireAuth }: { campaign:
                 </div>
               )}
               <button onClick={() => setShowWithdraw((s) => !s)} style={{ width: "100%", boxSizing: "border-box", ...ghostBtn, padding: 12, fontSize: 14 }}>{showWithdraw ? "Annuler" : "Demander un retrait"}</button>
+              <button onClick={async () => { if (!campaign) return; const next = !(campaign as any).isActive !== false; await api.post(`/campaigns/${campaign.id}/toggle-active`, { isActive: !((campaign as any).isActive !== false) }, token || undefined); window.location.reload(); }} style={{ width: "100%", boxSizing: "border-box", background: (campaign as any).isActive === false ? "rgba(46,204,113,0.15)" : "rgba(231,166,26,0.15)", border: `1px solid ${(campaign as any).isActive === false ? "rgba(46,204,113,0.5)" : "rgba(231,166,26,0.5)"}`, color: (campaign as any).isActive === false ? "#2ECC71" : "#E7A61A", padding: 12, borderRadius: 999, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>{(campaign as any).isActive === false ? "Réactiver la campagne" : "Désactiver la campagne"}</button>
             </>
           )}
           {withdrawErr && <p style={{ color: "#E74C3C", fontSize: 13, marginTop: 10 }}>{withdrawErr}</p>}
@@ -1520,6 +1521,10 @@ function AdminBackOffice({ user, token, onRequireAuth }: { user: AuthUser | null
     await api.post(`/admin/campaigns/${id}/moderate`, { status }, token || undefined);
     loadAll();
   }
+  async function toggleActive(id: string, isActive: boolean) {
+    await api.post(`/admin/campaigns/${id}/toggle-active`, { isActive }, token || undefined);
+    loadAll();
+  }
   async function removeCampaign(id: string, title: string) {
     if (typeof window !== "undefined" && !window.confirm(`Supprimer définitivement « ${title} » ?`)) return;
     await api.del(`/admin/campaigns/${id}`, token || undefined);
@@ -1683,6 +1688,7 @@ function AdminBackOffice({ user, token, onRequireAuth }: { user: AuthUser | null
                 <button onClick={() => openEdit(c.slug)} style={{ ...ghostBtn, padding: "8px 14px", fontSize: 12, color: "#B4A8F5", borderColor: "rgba(101,77,223,0.5)" }}>Éditer</button>
                 <button onClick={() => moderate(c.id, "APPROVED")} style={{ background: "#fff", color: "#000", border: "none", padding: "8px 14px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Approuver</button>
                 <button onClick={() => moderate(c.id, "REJECTED")} style={{ ...ghostBtn, padding: "8px 14px", fontSize: 12 }}>Rejeter</button>
+                <button onClick={() => toggleActive(c.id, !c.isActive)} style={{ background: c.isActive ? "rgba(231,166,26,0.15)" : "rgba(46,204,113,0.15)", border: `1px solid ${c.isActive ? "rgba(231,166,26,0.5)" : "rgba(46,204,113,0.5)"}`, color: c.isActive ? "#E7A61A" : "#2ECC71", padding: "8px 14px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{c.isActive === false ? "Activer" : "Désactiver"}</button>
                 <button onClick={() => removeCampaign(c.id, c.title)} style={{ background: "rgba(231,76,60,0.15)", border: "1px solid rgba(231,76,60,0.5)", color: "#E74C3C", padding: "8px 14px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Supprimer</button>
               </div>
             </div>

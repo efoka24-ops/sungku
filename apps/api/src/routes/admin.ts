@@ -164,6 +164,7 @@ adminRouter.get("/campaigns", async (req, res) => {
       category: c.category,
       visibility: c.visibility,
       moderationStatus: c.moderationStatus,
+      isActive: c.isActive,
       targetAmount: c.targetAmount,
       raised: c.contributions.reduce((s, x) => s + x.amount, 0),
       organizer: c.organizer,
@@ -295,6 +296,18 @@ adminRouter.put("/campaigns/:id", async (req, res) => {
     },
   });
   res.json(updated);
+});
+
+// Toggle campaign active status (deactivate / reactivate)
+adminRouter.post("/campaigns/:id/toggle-active", async (req, res) => {
+  const { isActive } = req.body as { isActive: boolean };
+  if (typeof isActive !== "boolean") {
+    return res.status(400).json({ error: "isActive (boolean) requis" });
+  }
+  const campaign = await prisma.campaign.findUnique({ where: { id: req.params.id } });
+  if (!campaign) return res.status(404).json({ error: "Campagne introuvable" });
+  const updated = await prisma.campaign.update({ where: { id: req.params.id }, data: { isActive } });
+  res.json({ id: updated.id, isActive: updated.isActive });
 });
 
 // Moderate a campaign

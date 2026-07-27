@@ -32,6 +32,7 @@ model Campaign {
   organizer     User?    @relation(fields: [organizerId], references: [id])
   // moderationStatus: APPROVED | PENDING | REJECTED (sensitive categories start PENDING)
   moderationStatus String @default("APPROVED")
+  isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   contributions Contribution[]
   reports       Report[]
