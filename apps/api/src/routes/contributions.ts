@@ -1,19 +1,19 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
-import { cashout, camooConfigured, normalizeStatus, verify } from "../camoo";
+import { initiateDeposit, pawapayConfigured, normalizeStatus, checkDepositStatus, resolveProvider, toMSISDN } from "../pawapay";
 import { notifyContribution } from "../notifications";
 
-// Actively reconcile PENDING contributions with Camoo (in case the webhook never
-// fired). Confirms/fails them based on Camoo's /verify response.
+// Actively reconcile PENDING contributions with PawaPay (in case the callback never
+// fired). Confirms/fails them based on PawaPay's check deposit status response.
 async function reconcilePending(campaignId: string) {
-  if (!camooConfigured()) return;
+  if (!pawapayConfigured()) return;
   const pend = await prisma.contribution.findMany({
     where: { campaignId, status: "PENDING", providerTxId: { not: null } },
   });
   for (const c of pend) {
     try {
-      const r: any = await verify(c.providerTxId!);
-      const st = normalizeStatus(r?.verify?.status || "");
+      const r: any = await checkDepositStatus(c.providerTxId!);
+      const st = normalizeStatus(r?.status || "");
       if (st !== "PENDING") {
         await prisma.contribution.update({ where: { id: c.id }, data: { status: st } });
         if (st === "CONFIRMED") await notifyContribution(c.id);
@@ -26,8 +26,7 @@ async function reconcilePending(campaignId: string) {
 
 export const contributionsRouter = Router();
 
-const APP_PUBLIC_URL = process.env.APP_PUBLIC_URL || "http://localhost:4000";
-const DEFAULT_CURRENCY = process.env.CAMOO_CURRENCY || "XAF";
+const DEFAULT_CURRENCY = process.env.PAWAPAY_CURRENCY || process.env.CAMOO_CURRENCY || "XAF";
 
 const MOBILE_CHANNELS = ["ORANGE_MONEY", "MTN_MOMO"];
 
@@ -68,33 +67,36 @@ contributionsRouter.post("/:campaignId/contributions", async (req, res) => {
     },
   });
 
-  // Real payment collection via Camoo for mobile-money channels when configured.
-  if (camooConfigured() && MOBILE_CHANNELS.includes(channel)) {
+  // Real payment collection via PawaPay for mobile-money channels when configured.
+  if (pawapayConfigured() && MOBILE_CHANNELS.includes(channel)) {
     if (!phoneNumber) {
       await prisma.contribution.update({ where: { id: contribution.id }, data: { status: "FAILED" } });
       return res.status(400).json({ error: "Numéro de téléphone requis pour le paiement mobile money" });
     }
     try {
-      const result = await cashout({
+      const provider = resolveProvider(channel, phoneNumber);
+      const result = await initiateDeposit({
         amount: Number(amount),
-        phone_number: phoneNumber,
         currency: DEFAULT_CURRENCY,
-        notification_url: `${APP_PUBLIC_URL}/payments/webhooks/camoo`,
-        external_reference: contribution.id,
-        shopping_cart_details: {
-          campaign_id: campaign.id,
-          campaign_title: campaign.title,
-          description: `Contribution à ${campaign.title}`,
+        phoneNumber,
+        provider,
+        depositId: contribution.id, // use contribution ID as depositId for easy reconciliation
+        metadata: {
+          campaignId: campaign.id,
+          campaignTitle: campaign.title,
         },
       });
+      if (result.status === "REJECTED") {
+        await prisma.contribution.update({ where: { id: contribution.id }, data: { status: "FAILED" } });
+        return res.status(400).json({ error: "Paiement rejeté", detail: result.failureReason?.failureMessage });
+      }
       const updated = await prisma.contribution.update({
         where: { id: contribution.id },
         data: {
-          providerTxId: result.cashOut?.id || null,
-          status: normalizeStatus(result.cashOut?.status || "PENDING"),
+          providerTxId: result.depositId,
+          status: "PENDING", // PawaPay is async; final status arrives via callback
         },
       });
-      if (updated.status === "CONFIRMED") await notifyContribution(updated.id);
       return res.status(201).json(updated);
     } catch (e: any) {
       await prisma.contribution.update({ where: { id: contribution.id }, data: { status: "FAILED" } });
@@ -102,7 +104,7 @@ contributionsRouter.post("/:campaignId/contributions", async (req, res) => {
     }
   }
 
-  // No Camoo credentials (or non-mobile channel): simulate confirmation locally.
+  // No PawaPay credentials (or non-mobile channel): simulate confirmation locally.
   simulateProviderConfirmation(contribution.id);
   res.status(201).json(contribution);
 });

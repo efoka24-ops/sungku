@@ -1,14 +1,47 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
-import { verifyWebhookSignature, normalizeStatus, account, camooConfigured } from "../camoo";
+import { verifyWebhookSignature, normalizeStatus as camooNormalizeStatus, account, camooConfigured } from "../camoo";
+import { pawapayConfigured, normalizeStatus as pawapayNormalizeStatus, getWalletBalances } from "../pawapay";
 import { notifyContribution } from "../notifications";
 
 export const paymentsRouter = Router();
 
 /**
- * Camoo payment notification (signed). Delivered as HTTP GET with params:
- * payment_id, status, status_time, trx (external_reference), sig.
- * Must verify the HMAC-SHA256 signature, be idempotent, and return 200.
+ * PawaPay deposit callback (POST). PawaPay sends a JSON body with the final status.
+ * Configure this URL in the PawaPay Dashboard: POST /payments/webhooks/pawapay
+ */
+paymentsRouter.post("/webhooks/pawapay", async (req, res) => {
+  const body = req.body;
+  const depositId = body?.depositId;
+  const status = pawapayNormalizeStatus(body?.status || "");
+
+  if (!depositId) return res.status(200).json({ received: true, matched: false });
+
+  // depositId = contribution.id (we use it as the PawaPay depositId)
+  const contribution = await prisma.contribution.findFirst({
+    where: {
+      OR: [
+        { id: depositId },
+        { providerTxId: depositId },
+      ],
+    },
+  });
+
+  if (!contribution) return res.status(200).json({ received: true, matched: false });
+
+  if (contribution.status === "PENDING" && status !== "PENDING") {
+    await prisma.contribution.update({
+      where: { id: contribution.id },
+      data: { status, providerTxId: contribution.providerTxId || depositId },
+    });
+    if (status === "CONFIRMED") await notifyContribution(contribution.id);
+  }
+
+  res.status(200).json({ received: true, matched: true });
+});
+
+/**
+ * Camoo payment notification (signed) — kept for backward compatibility.
  */
 paymentsRouter.get("/webhooks/camoo", async (req, res) => {
   const query = req.query as Record<string, string>;
@@ -19,7 +52,7 @@ paymentsRouter.get("/webhooks/camoo", async (req, res) => {
 
   const externalReference = query.trx; // = contribution.id
   const paymentId = query.payment_id; // = Camoo cashOut.id
-  const status = normalizeStatus(query.status || "");
+  const status = camooNormalizeStatus(query.status || "");
 
   // Locate the contribution by our external reference, else by provider tx id.
   const contribution = await prisma.contribution.findFirst({
@@ -46,10 +79,19 @@ paymentsRouter.get("/webhooks/camoo", async (req, res) => {
   res.status(200).json({ received: true, matched: true });
 });
 
-// Merchant account balance passthrough (for the organizer dashboard / withdrawals).
+// Merchant account balance passthrough.
 paymentsRouter.get("/account", async (_req, res) => {
+  // Try PawaPay first, fallback to Camoo
+  if (pawapayConfigured()) {
+    try {
+      const balances = await getWalletBalances();
+      return res.json(balances);
+    } catch (e: any) {
+      return res.status(502).json({ error: e.message });
+    }
+  }
   if (!camooConfigured()) {
-    return res.status(503).json({ error: "Camoo non configuré (CAMOO_API_KEY/SECRET manquants)" });
+    return res.status(503).json({ error: "Aucun fournisseur de paiement configuré" });
   }
   try {
     res.json(await account());
