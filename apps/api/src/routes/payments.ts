@@ -2,6 +2,12 @@ import { Router } from "express";
 import { prisma } from "../prisma";
 import { verifyWebhookSignature, normalizeStatus as camooNormalizeStatus, account, camooConfigured } from "../camoo";
 import { pawapayConfigured, normalizeStatus as pawapayNormalizeStatus, getWalletBalances } from "../pawapay";
+import {
+  gatewayConfigured,
+  getBalances,
+  normalizeStatus as gatewayNormalizeStatus,
+  verifyWebhook as verifyGatewayWebhook,
+} from "../gateway";
 import { notifyContribution } from "../notifications";
 
 export const paymentsRouter = Router();
@@ -33,6 +39,53 @@ paymentsRouter.post("/webhooks/pawapay", async (req, res) => {
     await prisma.contribution.update({
       where: { id: contribution.id },
       data: { status, providerTxId: contribution.providerTxId || depositId },
+    });
+    if (status === "CONFIRMED") await notifyContribution(contribution.id);
+  }
+
+  res.status(200).json({ received: true, matched: true });
+});
+
+/**
+ * Webhook de la passerelle apisungku : statut final d'une contribution.
+ *
+ * A declarer comme URL de webhook du projet : POST /payments/webhooks/apisungku
+ */
+paymentsRouter.post("/webhooks/apisungku", async (req, res) => {
+  const rawBody = (req as any).rawBody as string | undefined;
+
+  // Non signe ou signature invalide : on refuse. Accepter un webhook non
+  // verifie laisserait n'importe qui declarer une contribution payee.
+  if (!rawBody || !verifyGatewayWebhook(rawBody, req.headers)) {
+    return res.status(401).json({ error: "Signature invalide" });
+  }
+
+  const data = req.body?.data;
+  // La reference est l'identifiant de contribution que nous avons emis.
+  const reference = data?.reference as string | undefined;
+  const status = gatewayNormalizeStatus(data?.status || "");
+
+  if (!reference && !data?.id) {
+    return res.status(200).json({ received: true, matched: false });
+  }
+
+  const contribution = await prisma.contribution.findFirst({
+    where: {
+      OR: [
+        ...(reference ? [{ id: reference }] : []),
+        ...(data?.id ? [{ providerTxId: data.id as string }] : []),
+      ],
+    },
+  });
+
+  if (!contribution) return res.status(200).json({ received: true, matched: false });
+
+  // On n'avance que depuis PENDING : un webhook rejoue ou arrive dans le
+  // desordre ne peut pas revenir sur un statut deja definitif.
+  if (contribution.status === "PENDING" && status !== "PENDING") {
+    await prisma.contribution.update({
+      where: { id: contribution.id },
+      data: { status, providerTxId: contribution.providerTxId || data?.id || null },
     });
     if (status === "CONFIRMED") await notifyContribution(contribution.id);
   }
@@ -81,7 +134,14 @@ paymentsRouter.get("/webhooks/camoo", async (req, res) => {
 
 // Merchant account balance passthrough.
 paymentsRouter.get("/account", async (_req, res) => {
-  // Try PawaPay first, fallback to Camoo
+  // La passerelle d'abord, puis PawaPay en direct, puis Camoo.
+  if (gatewayConfigured()) {
+    try {
+      return res.json(await getBalances());
+    } catch (e: any) {
+      return res.status(502).json({ error: e.message });
+    }
+  }
   if (pawapayConfigured()) {
     try {
       const balances = await getWalletBalances();

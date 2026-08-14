@@ -20,7 +20,16 @@ app.disable("x-powered-by");
 // crossOriginResourcePolicy: cross-origin so the browser can read the API from the web app.
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(corsMiddleware());
-app.use(express.json({ limit: "5mb" }));
+// Le corps brut est conserve au passage : les webhooks de paiement signent les
+// octets recus, et re-serialiser le JSON invaliderait la signature.
+app.use(
+  express.json({
+    limit: "5mb",
+    verify: (req, _res, buf) => {
+      (req as express.Request & { rawBody?: string }).rawBody = buf.toString("utf8");
+    },
+  })
+);
 
 // Health check is exempt from rate limiting (used by the platform).
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
