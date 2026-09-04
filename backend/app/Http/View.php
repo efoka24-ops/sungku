@@ -11,9 +11,17 @@ namespace Sungku\Http;
  */
 final class View
 {
-    /** @param array<string, mixed> $data */
-    public static function render(string $view, array $data = [], string $title = 'Sungku'): void
-    {
+    /**
+     * @param array<string, mixed> $data
+     * @param string $layout gabarit englobant : 'layout' pour le site public,
+     *                       'layout-app' pour les espaces connectés.
+     */
+    public static function render(
+        string $view,
+        array $data = [],
+        string $title = 'Sungku',
+        string $layout = 'layout',
+    ): void {
         $file = dirname(__DIR__, 2) . '/views/' . $view . '.php';
 
         if (!is_file($file)) {
@@ -30,7 +38,7 @@ final class View
         $content = (string) ob_get_clean();
 
         header('Content-Type: text/html; charset=utf-8');
-        require dirname(__DIR__, 2) . '/views/layout.php';
+        require dirname(__DIR__, 2) . '/views/' . basename($layout) . '.php';
     }
 
     /**

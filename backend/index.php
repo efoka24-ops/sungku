@@ -15,9 +15,11 @@ use Sungku\Core\Logger;
 use Sungku\Core\Request;
 use Sungku\Core\Response;
 use Sungku\Core\Router;
+use Sungku\Http\Controllers\AdminController;
 use Sungku\Http\Controllers\AuthController;
 use Sungku\Http\Controllers\CampaignController;
 use Sungku\Http\Controllers\ContributionController;
+use Sungku\Http\Controllers\DashboardController;
 use Sungku\Http\Controllers\PaymentController;
 use Sungku\Http\Controllers\MaintenanceController;
 use Sungku\Http\Controllers\PageController;
@@ -59,6 +61,8 @@ $contributions = new ContributionController();
 $payments = new PaymentController();
 $webhooks = new WebhookController();
 $maintenance = new MaintenanceController();
+$dashboard = new DashboardController();
+$admin = new AdminController();
 
 // ─── Pages ──────────────────────────────────────────────────────────────────
 // Rendues côté serveur : le socle n'a pas de chaîne de construction, et une
@@ -71,6 +75,20 @@ $router->post('/inscription', [$pages, 'register']);
 $router->get('/deconnexion', [$pages, 'logout']);
 $router->get('/creer', [$pages, 'createForm']);
 $router->post('/creer', [$pages, 'create']);
+
+// ─── Espace organisateur ────────────────────────────────────────────────────
+$router->get('/tableau-de-bord', [$dashboard, 'index']);
+$router->get('/tableau-de-bord/contributions', [$dashboard, 'contributions']);
+
+// ─── Back-office ────────────────────────────────────────────────────────────
+// Le contrôle du rôle ADMIN est fait dans chaque méthode, pas ici : une route
+// ajoutée plus tard hériterait sinon silencieusement de l'oubli.
+$router->get('/admin', [$admin, 'index']);
+$router->get('/admin/collectes', [$admin, 'campaigns']);
+$router->get('/admin/contributions', [$admin, 'contributions']);
+$router->get('/admin/utilisateurs', [$admin, 'users']);
+$router->post('/admin/moderation', [$admin, 'moderate']);
+$router->post('/admin/revalider', [$admin, 'recheck']);
 
 // ─── API ────────────────────────────────────────────────────────────────────
 // Préfixée /api pour ne pas disputer l'espace d'URL aux pages : sans cela,
