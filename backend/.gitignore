@@ -1,0 +1,6 @@
+# Secrets : token pawaPay et accès base. Jamais versionnés.
+.env
+
+# Journaux applicatifs (numéros de téléphone, identifiants de transaction).
+storage/logs/*
+!storage/logs/.gitkeep

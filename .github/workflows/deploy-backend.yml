@@ -1,0 +1,53 @@
+name: Déploiement backend (FTPS)
+
+# Le socle PHP part vers l'hébergement mutualisé à chaque poussée sur main.
+# Rien n'est construit : PHP s'exécute tel quel, il n'y a ni bundle ni vendor.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Vérifier la syntaxe PHP
+        # Un fichier au parsing cassé déployé, c'est une API en 500 : la
+        # vérification passe avant tout transfert, jamais après.
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq php8.1-cli
+          find backend -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Transférer par FTPS
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          sudo apt-get install -y -qq lftp
+          # FTPS obligatoire : en FTP simple, identifiants et code source
+          # circulent en clair.
+          # Pas de --delete : le miroir écrase mais ne supprime rien. La
+          # racine distante contient aussi le .env et les journaux, qu'une
+          # suppression automatique emporterait au premier faux pas.
+          lftp -c "
+            set ftp:ssl-force true;
+            set ftp:ssl-protect-data true;
+            set ssl:verify-certificate no;
+            open -u \"$FTP_USER\",\"$FTP_PASSWORD\" \"$FTP_HOST\";
+            mirror --reverse --verbose \
+                   --exclude-glob .env \
+                   --exclude-glob storage/logs/* \
+                   backend/ / ;
+          "
+
+      - name: Rappel
+        run: |
+          echo "Transfert terminé."
+          echo "Migrations : php /home/trugro9159/sungku/bin/migrate.php (cron cPanel ou terminal)."
