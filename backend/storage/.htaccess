@@ -1,0 +1,7 @@
+# Ceinture et bretelles.
+#
+# Ce dossier n'a rien à faire dans l'espace servi par Apache : le sous-domaine
+# doit pointer sur public_html/. Mais tant qu'une configuration cPanel peut le
+# ramener sous la racine web d'un clic malheureux, on refuse l'accès ici aussi.
+# Le code source contient les requêtes SQL et le .env voisin, le token pawaPay.
+Require all denied
