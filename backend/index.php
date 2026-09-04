@@ -58,6 +58,28 @@ $contributions = new ContributionController();
 $payments = new PaymentController();
 $webhooks = new WebhookController();
 
+// Racine : ce service est une API, ouvrir le domaine dans un navigateur ne
+// montre donc rien d'autre que ceci. Mieux vaut un index explicite qu'un
+// « Ressource introuvable » qui laisse croire à une panne.
+$router->get('/', static fn () => Response::json([
+    'service' => 'Sungku API',
+    'status' => 'ok',
+    'time' => gmdate('c'),
+    'endpoints' => [
+        'GET  /health',
+        'GET  /campaigns',
+        'GET  /campaigns/{slug}',
+        'GET  /campaigns/{slug}/contributions',
+        'POST /campaigns/{slug}/contributions',
+        'GET  /contributions/{id}',
+        'GET  /payments/providers',
+        'POST /payments/predict-provider',
+        'POST /auth/register',
+        'POST /auth/login',
+        'GET  /auth/me',
+    ],
+]));
+
 $router->get('/health', static fn () => Response::json(['status' => 'ok', 'time' => gmdate('c')]));
 
 $router->post('/auth/register', [$auth, 'register']);
