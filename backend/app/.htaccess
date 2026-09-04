@@ -1,7 +1,16 @@
 # Ceinture et bretelles.
 #
-# Ce dossier n'a rien à faire dans l'espace servi par Apache : le sous-domaine
-# doit pointer sur public_html/. Mais tant qu'une configuration cPanel peut le
-# ramener sous la racine web d'un clic malheureux, on refuse l'accès ici aussi.
-# Le code source contient les requêtes SQL et le .env voisin, le token pawaPay.
-Require all denied
+# Ce dossier partage la racine web du sous-domaine — le compte FTP est
+# cloisonné dessus, le code ne peut pas être placé ailleurs. On refuse donc
+# l'accès ici aussi : le code source expose les requêtes SQL, et le .env
+# voisin le token pawaPay.
+#
+# Les deux syntaxes coexistent : « Require » est celle d'Apache 2.4 et
+# provoque une 500 sur un serveur 2.2, où « Deny from all » est attendu.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

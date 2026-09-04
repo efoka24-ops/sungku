@@ -19,6 +19,7 @@ use Sungku\Http\Controllers\AuthController;
 use Sungku\Http\Controllers\CampaignController;
 use Sungku\Http\Controllers\ContributionController;
 use Sungku\Http\Controllers\PaymentController;
+use Sungku\Http\Controllers\MaintenanceController;
 use Sungku\Http\Controllers\WebhookController;
 
 // La racine web du sous-domaine EST ce dossier : app/, bin/, database/ et le
@@ -77,6 +78,12 @@ $router->post('/payments/predict-provider', [$payments, 'predict']);
 
 // URL à déclarer dans le dashboard pawaPay (Callback URLs).
 $router->post('/payments/callbacks/pawapay', [$webhooks, 'pawapay']);
+
+// Exploitation : pas d'accès shell sur cet hébergement, ces deux routes en
+// tiennent lieu. Protégées par MIGRATE_KEY, inertes si la clé n'est pas définie.
+$maintenance = new MaintenanceController();
+$router->post('/internal/migrate', [$maintenance, 'migrate']);
+$router->get('/internal/status', [$maintenance, 'status']);
 
 try {
     $router->dispatch($request);

@@ -6,10 +6,17 @@
 
 RewriteEngine On
 
-# Forcer HTTPS AVANT toute autre règle : les cookies de session et les
-# callbacks pawaPay n'ont rien à faire en clair.
-RewriteCond %{HTTPS} !=on
-RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+# Forcer HTTPS : les cookies de session et les callbacks pawaPay n'ont rien à
+# faire en clair.
+#
+# DÉSACTIVÉ TANT QU'AUTOSSL N'EST PAS ACTIF sur sungku.trugroup.cm. Le domaine
+# ne répond pas encore en HTTPS : cette redirection enverrait chaque requête
+# vers une URL morte, y compris la sonde /health. Décommenter les deux lignes
+# dès que le certificat est délivré — et le faire avant d'ouvrir le service au
+# public, une session transportée en clair est rejouable.
+#
+# RewriteCond %{HTTPS} !=on
+# RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
 
 # Refuser toute URL menant aux dossiers de code, quelle que soit la casse.
 # Les .htaccess qui s'y trouvent font déjà ce travail ; celui-ci les double au
@@ -35,8 +42,22 @@ RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
 # Le .env porte le token pawaPay et les accès base : il partage le dossier
 # servi par Apache, il ne doit jamais en sortir.
+#
+# Les deux syntaxes de contrôle d'accès coexistent ici. « Require » est celle
+# d'Apache 2.4 ; sur un serveur 2.2, ou si mod_authz_core n'est pas chargé,
+# elle provoque une erreur 500 sur TOUTES les requêtes du dossier — un refus
+# d'accès mal orthographié coupe le site entier, pas seulement la règle.
 <FilesMatch "^\.env|^\.gitignore$|\.log$|\.sql$|\.md$">
-    Require all denied
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
 </FilesMatch>
 
-Options -Indexes
+# Pas de « Options -Indexes » : la directive Options est refusée quand
+# AllowOverride ne l'autorise pas, ce qui suffit à casser tout le site. Le
+# listage de dossier est de toute façon impossible — la réécriture envoie
+# chaque URL sans fichier correspondant vers index.php.

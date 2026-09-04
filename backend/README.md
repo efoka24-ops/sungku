@@ -52,6 +52,26 @@ livraison interminable, pour un besoin que quinze lignes d'autoloader couvrent.
 | `GET` | `/payments/providers` | opérateurs opérationnels |
 | `POST` | `/payments/predict-provider` | valider un numéro, deviner l'opérateur |
 | `POST` | `/payments/callbacks/pawapay` | callback pawaPay |
+| `POST` | `/internal/migrate` | applique les migrations (en-tête `X-Migrate-Key`) |
+| `GET` | `/internal/status` | diagnostic de configuration (même en-tête) |
+
+Les deux routes `/internal` tiennent lieu d'accès shell, absent de cet
+hébergement. Elles répondent `503` tant que `MIGRATE_KEY` n'est pas définie —
+un endpoint de migration ouvert laisserait n'importe qui rejouer le schéma — et
+comparent la clé avec `hash_equals`, une comparaison ordinaire s'arrêtant au
+premier caractère différent.
+
+## HTTPS n'est pas optionnel
+
+Le cookie de session est marqué `Secure` : sur HTTP, le navigateur le reçoit
+mais ne le renvoie jamais, et **toute authentification échoue**. C'est
+volontaire — une session transportée en clair est rejouable par quiconque
+observe le réseau. Tant qu'AutoSSL n'est pas actif sur le domaine, seules les
+routes publiques (`/health`, `/campaigns`, `/payments/providers`) fonctionnent.
+
+pawaPay ne livre par ailleurs ses callbacks qu'en HTTPS, et la redirection
+`http → https` du `.htaccess` reste commentée jusqu'à la délivrance du
+certificat : l'activer avant renverrait chaque requête vers une URL morte.
 
 ## Paiements — ce qui protège l'argent
 
