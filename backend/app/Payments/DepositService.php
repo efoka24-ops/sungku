@@ -294,6 +294,17 @@ final class DepositService
      */
     public static function customerMessage(string $campaignTitle): string
     {
-        return Text::customerMessage($campaignTitle);
+        $label = Env::get('PAYMENT_LABEL', 'TRU GROUP') ?? 'TRU GROUP';
+
+        // Le libellé de l'entreprise passe en premier : c'est lui que le
+        // payeur doit reconnaître. Le titre de la collecte complète la ligne
+        // s'il reste de la place dans les 22 caractères, sans jamais amputer
+        // le libellé — un « TRU GRO Anniversaire » ne rassurerait personne.
+        $court = Text::customerMessage($label, $label);
+        $avecCollecte = Text::customerMessage($label . ' ' . $campaignTitle, $court);
+
+        return str_starts_with(mb_strtolower($avecCollecte), mb_strtolower($court))
+            ? $avecCollecte
+            : $court;
     }
 }

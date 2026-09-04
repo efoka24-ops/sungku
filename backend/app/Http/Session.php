@@ -41,6 +41,65 @@ final class Session
 
         session_name('sungku_session');
         session_start();
+
+        self::verifierEmpreinte();
+        self::verifierInactivite();
+    }
+
+    /**
+     * Empreinte du client : navigateur et sous-réseau.
+     *
+     * Le certificat HTTPS n'étant pas encore actif, le cookie de session
+     * circule en clair et peut être capté sur le réseau. Lier la session à
+     * l'empreinte du client ne rend pas le vol impossible, mais il oblige
+     * l'attaquant à reproduire aussi le navigateur ET à se trouver dans le
+     * même sous-réseau — ce qui écarte le rejeu depuis n'importe où.
+     *
+     * Le sous-réseau plutôt que l'adresse exacte : sur un réseau mobile
+     * camerounais, l'IP change en cours de navigation et déconnecterait
+     * l'utilisateur toutes les cinq minutes.
+     */
+    private static function verifierEmpreinte(): void
+    {
+        $empreinte = hash('sha256', implode('|', [
+            $_SERVER['HTTP_USER_AGENT'] ?? '',
+            self::sousReseau((string) ($_SERVER['REMOTE_ADDR'] ?? '')),
+        ]));
+
+        if (!isset($_SESSION['_fp'])) {
+            $_SESSION['_fp'] = $empreinte;
+
+            return;
+        }
+
+        if (!hash_equals((string) $_SESSION['_fp'], $empreinte)) {
+            $_SESSION = [];
+            session_destroy();
+            session_start();
+            $_SESSION['_fp'] = $empreinte;
+        }
+    }
+
+    /** Session dormante fermée d'office : un poste partagé n'y donne plus accès. */
+    private static function verifierInactivite(): void
+    {
+        $limite = 3600 * 4;
+        $dernier = (int) ($_SESSION['_vu'] ?? 0);
+
+        if ($dernier > 0 && (time() - $dernier) > $limite) {
+            $_SESSION = [];
+            session_destroy();
+            session_start();
+        }
+
+        $_SESSION['_vu'] = time();
+    }
+
+    private static function sousReseau(string $ip): string
+    {
+        $parts = explode('.', $ip);
+
+        return count($parts) === 4 ? implode('.', array_slice($parts, 0, 3)) : $ip;
     }
 
     public static function login(int $userId, array $roles): void

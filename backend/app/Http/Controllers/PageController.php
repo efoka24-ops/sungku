@@ -7,6 +7,7 @@ namespace Sungku\Http\Controllers;
 use PDOException;
 use Sungku\Core\Db;
 use Sungku\Core\Request;
+use Sungku\Http\Csrf;
 use Sungku\Http\Session;
 use Sungku\Http\View;
 use Sungku\Payments\StatusMapper;
@@ -83,23 +84,33 @@ final class PageController
 
     public function loginForm(Request $request, array $params = [], ?string $erreur = null): void
     {
-        View::render(
-            'connexion',
-            [
-                'erreur' => $erreur,
-                // Sans HTTPS, le cookie de session marqué Secure n'est jamais
-                // renvoyé : autant le dire ici plutôt que de laisser
-                // l'utilisateur croire à un mot de passe erroné.
-                'httpsManquant' => ($_SERVER['HTTPS'] ?? '') !== 'on',
-            ],
-            'Connexion — Sungku',
-        );
+        View::render('connexion', ['erreur' => $erreur], 'Connexion — Sungku');
     }
 
     public function login(Request $request): void
     {
+        if (!Csrf::isValid($_POST['_csrf'] ?? null)) {
+            $this->loginForm($request, [], 'Session expirée. Recommencez.');
+
+            return;
+        }
+
         $email = mb_strtolower(trim((string) ($_POST['email'] ?? '')));
         $password = (string) ($_POST['password'] ?? '');
+        $ip = $request->ip();
+
+        // Freiner les essais en série. Sans cela, un mot de passe faible tombe
+        // en quelques minutes : rien ne limite le nombre d'essais par seconde.
+        if (self::tropDeTentatives($email, $ip)) {
+            $this->loginForm($request, [], 'Trop de tentatives. Réessayez dans quelques minutes.');
+
+            return;
+        }
+
+        Db::execute(
+            'INSERT INTO login_attempts (email, ip, tried_at) VALUES (:e, :i, NOW())',
+            ['e' => mb_substr($email, 0, 190), 'i' => $ip],
+        );
 
         $user = Db::selectOne('SELECT id, password_hash FROM users WHERE email = :e LIMIT 1', ['e' => $email]);
 
@@ -112,12 +123,36 @@ final class PageController
         }
 
         $userId = (int) $user['id'];
+
+        // Connexion réussie : on efface le compteur, sinon un utilisateur
+        // distrait resterait bloqué après s'être enfin souvenu de son mot
+        // de passe.
+        Db::execute('DELETE FROM login_attempts WHERE email = :e AND ip = :i', ['e' => $email, 'i' => $ip]);
+
         Session::login($userId, Session::rolesOf($userId));
         self::redirect('/');
     }
 
+    /** Cinq échecs en quinze minutes pour un même couple compte / origine. */
+    private static function tropDeTentatives(string $email, string $ip): bool
+    {
+        $row = Db::selectOne(
+            'SELECT COUNT(*) AS n FROM login_attempts
+              WHERE email = :e AND ip = :i AND tried_at > (NOW() - INTERVAL 15 MINUTE)',
+            ['e' => $email, 'i' => $ip],
+        );
+
+        return (int) ($row['n'] ?? 0) >= 5;
+    }
+
     public function register(Request $request): void
     {
+        if (!Csrf::isValid($_POST['_csrf'] ?? null)) {
+            $this->loginForm($request, [], 'Session expirée. Recommencez.');
+
+            return;
+        }
+
         $email = mb_strtolower(trim((string) ($_POST['email'] ?? '')));
         $password = (string) ($_POST['password'] ?? '');
         $fullName = trim((string) ($_POST['fullName'] ?? ''));
@@ -184,6 +219,12 @@ final class PageController
         $userId = Session::userId();
         if ($userId === null) {
             self::redirect('/connexion');
+
+            return;
+        }
+
+        if (!Csrf::isValid($_POST['_csrf'] ?? null)) {
+            $this->createForm($request, [], 'Session expirée. Recommencez.');
 
             return;
         }

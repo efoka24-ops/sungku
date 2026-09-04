@@ -116,8 +116,7 @@ footer.site{border-top:1px solid var(--border);margin-top:80px;padding:32px 0;
 
 <footer class="site">
   <div class="wrap">
-    Sungku — paiements en ligne pour le Cameroun. Orange Money, MTN Mobile Money.
-    Traitement des paiements par pawaPay.
+    Sungku — paiements en ligne pour le Cameroun.
   </div>
 </footer>
 </body>

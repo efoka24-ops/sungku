@@ -27,14 +27,20 @@ final class Text
         '’' => "'", '‘' => "'", '“' => '"', '”' => '"', '–' => '-', '—' => '-',
     ];
 
+    /**
+     * La casse est préservée : « TRU GROUP » doit rester en capitales sur
+     * l'écran du payeur. C'est le slug, et lui seul, qui met en minuscules.
+     */
     public static function ascii(string $value): string
     {
-        $lower = mb_strtolower($value, 'UTF-8');
-        $translitere = strtr($lower, self::REMPLACEMENTS);
+        $table = self::REMPLACEMENTS;
+        foreach (self::REMPLACEMENTS as $accent => $remplacement) {
+            $table[mb_strtoupper($accent, 'UTF-8')] = mb_strtoupper($remplacement, 'UTF-8');
+        }
 
-        // Ce qui reste hors ASCII n'a pas d'équivalent raisonnable : on le
-        // retire plutôt que de laisser passer des octets illisibles.
-        return (string) preg_replace('/[^\x20-\x7E]/', '', $translitere);
+        // Ce qui reste hors ASCII imprimable n'a pas d'équivalent raisonnable :
+        // on le retire plutôt que de laisser passer des octets illisibles.
+        return (string) preg_replace('/[^\x20-\x7E]/', '', strtr($value, $table));
     }
 
     /**
@@ -43,26 +49,33 @@ final class Text
      */
     public static function customerMessage(string $source, string $defaut = 'Collecte Sungku'): string
     {
-        $clean = self::ascii($source);
-        $clean = preg_replace('/[^a-z0-9 ]/', ' ', $clean) ?? '';
+        $clean = preg_replace('/[^A-Za-z0-9 ]/', ' ', self::ascii($source)) ?? '';
         $clean = trim((string) preg_replace('/\s+/', ' ', $clean));
 
-        // La troncature peut couper un mot et laisser une espace finale : on
-        // retaille, puis on revérifie la borne basse.
-        $clean = rtrim(mb_substr($clean, 0, 22));
+        if (mb_strlen($clean) > 22) {
+            $coupe = mb_substr($clean, 0, 22);
 
-        if (mb_strlen($clean) < 4) {
-            return $defaut;
+            // Couper au dernier espace évite un mot tronqué en plein milieu,
+            // qui donne l'impression d'un libellé corrompu. Mais si ce recul
+            // ampute plus de la moitié de la place disponible, on préfère le
+            // mot coupé : « TRU GROUP Anniversair » informe plus que
+            // « TRU GROUP » seul.
+            $dernierEspace = mb_strrpos($coupe, ' ');
+            if ($dernierEspace !== false && $dernierEspace >= 12) {
+                $coupe = mb_substr($coupe, 0, $dernierEspace);
+            }
+
+            $clean = rtrim($coupe);
         }
 
-        // Capitale initiale : le libellé s'affiche tel quel sur le téléphone.
-        return ucfirst($clean);
+        return mb_strlen($clean) >= 4 ? $clean : $defaut;
     }
 
     /** Fragment d'URL stable et lisible. */
     public static function slug(string $value): string
     {
-        $base = trim((string) preg_replace('/[^a-z0-9]+/', '-', self::ascii($value)), '-');
+        $base = mb_strtolower(self::ascii($value), 'UTF-8');
+        $base = trim((string) preg_replace('/[^a-z0-9]+/', '-', $base), '-');
 
         return $base === '' ? 'collecte' : mb_substr($base, 0, 60);
     }

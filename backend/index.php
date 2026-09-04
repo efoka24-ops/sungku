@@ -101,6 +101,7 @@ $router->post('/api/payments/callbacks/pawapay', [$webhooks, 'pawapay']);
 // tiennent lieu. Protégées par MIGRATE_KEY, inertes si la clé n'est pas définie.
 $router->post('/internal/migrate', [$maintenance, 'migrate']);
 $router->get('/internal/status', [$maintenance, 'status']);
+$router->post('/internal/grant-role', [$maintenance, 'grantRole']);
 
 try {
     $router->dispatch($request);

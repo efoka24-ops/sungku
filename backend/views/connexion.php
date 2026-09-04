@@ -2,8 +2,9 @@
 
 use Sungku\Http\View;
 
+use Sungku\Http\Csrf;
+
 /** @var string|null $erreur */
-/** @var bool $httpsManquant */
 ?>
 <div class="wrap" style="max-width:960px;padding-top:64px;padding-bottom:80px">
   <div style="text-align:center;margin-bottom:40px">
@@ -15,16 +16,9 @@ use Sungku\Http\View;
     <div class="avis erreur" style="max-width:640px;margin:0 auto 20px"><?= View::e($erreur) ?></div>
   <?php endif; ?>
 
-  <?php if (!empty($httpsManquant)): ?>
-    <div class="avis alerte" style="max-width:640px;margin:0 auto 20px">
-      Le certificat HTTPS du domaine n’est pas encore actif. La connexion
-      fonctionne, mais elle circule en clair : à réserver aux essais, jamais à
-      une utilisation réelle.
-    </div>
-  <?php endif; ?>
-
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px" id="grille-auth">
     <form method="post" action="/connexion" class="carte">
+      <?= Csrf::field() ?>
       <h2 style="font-size:20px;margin:0 0 20px">Connexion</h2>
 
       <div class="champ">
@@ -41,6 +35,7 @@ use Sungku\Http\View;
     </form>
 
     <form method="post" action="/inscription" class="carte">
+      <?= Csrf::field() ?>
       <h2 style="font-size:20px;margin:0 0 20px">Créer un compte</h2>
 
       <div class="champ">

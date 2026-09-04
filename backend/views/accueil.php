@@ -93,6 +93,5 @@ use Sungku\Http\View;
   <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap">
     <span class="pilule">Orange Money</span>
     <span class="pilule">MTN Mobile Money</span>
-    <span class="pilule">pawaPay</span>
   </div>
 </section>

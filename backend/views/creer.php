@@ -1,5 +1,6 @@
 <?php
 
+use Sungku\Http\Csrf;
 use Sungku\Http\View;
 
 /** @var string|null $erreur */
@@ -12,7 +13,8 @@ use Sungku\Http\View;
   <?php endif; ?>
 
   <form method="post" action="/creer" id="formulaire"
-        style="display:grid;grid-template-columns:1.1fr 0.9fr;gap:40px" id="grille-creation">
+        style="display:grid;grid-template-columns:1.1fr 0.9fr;gap:40px">
+    <?= Csrf::field() ?>
     <div>
       <div class="champ">
         <label for="title">Titre de la collecte</label>

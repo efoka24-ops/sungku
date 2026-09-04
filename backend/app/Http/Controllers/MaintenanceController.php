@@ -82,6 +82,55 @@ final class MaintenanceController
         ]);
     }
 
+    /**
+     * Attribue un rôle à un compte existant.
+     *
+     * Il n'existe pas d'écran pour cela, et il ne doit pas en exister : une
+     * page « donner les droits admin » accessible depuis le site serait la
+     * cible la plus rentable de toute la plateforme. Cette route passe par la
+     * clé d'exploitation, au même titre que les migrations.
+     */
+    public function grantRole(Request $request): void
+    {
+        if (!$this->authorised($request)) {
+            return;
+        }
+
+        $email = mb_strtolower($request->string('email'));
+        $role = strtoupper($request->string('role'));
+
+        // Liste blanche : un rôle libre permettrait d'en inventer un que le
+        // code ne vérifie nulle part, donc de croire à tort à une protection.
+        if (!in_array($role, ['ADMIN', 'ORGANIZER', 'API_MERCHANT'], true)) {
+            Response::error('Rôle inconnu.', 422);
+
+            return;
+        }
+
+        $user = Db::selectOne('SELECT id FROM users WHERE email = :e LIMIT 1', ['e' => $email]);
+        if ($user === null) {
+            Response::error('Aucun compte avec cette adresse.', 404);
+
+            return;
+        }
+
+        Db::execute(
+            'INSERT IGNORE INTO user_roles (user_id, role) VALUES (:id, :role)',
+            ['id' => $user['id'], 'role' => $role],
+        );
+
+        Logger::write('deploy', 'Rôle attribué', ['email' => $email, 'role' => $role]);
+
+        Response::json([
+            'email' => $email,
+            'roles' => array_column(
+                Db::select('SELECT role FROM user_roles WHERE user_id = :id', ['id' => $user['id']]),
+                'role',
+            ),
+            'note' => 'Reconnectez-vous : les rôles sont chargés à la connexion.',
+        ]);
+    }
+
     private function authorised(Request $request): bool
     {
         $expected = Env::get('MIGRATE_KEY', '') ?? '';
