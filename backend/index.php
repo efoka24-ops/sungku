@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Front controller — seule porte d'entrée de l'API.
+ * Front controller — seule porte d'entrée, pages HTML comprises.
  *
  * Tout passe par ici, donc en-têtes de sécurité, CORS et gestion d'erreur
  * s'appliquent partout sans exception possible. C'est la différence avec une
@@ -20,6 +20,7 @@ use Sungku\Http\Controllers\CampaignController;
 use Sungku\Http\Controllers\ContributionController;
 use Sungku\Http\Controllers\PaymentController;
 use Sungku\Http\Controllers\MaintenanceController;
+use Sungku\Http\Controllers\PageController;
 use Sungku\Http\Controllers\WebhookController;
 
 // La racine web du sous-domaine EST ce dossier : app/, bin/, database/ et le
@@ -49,61 +50,55 @@ if ($request->method === 'OPTIONS') {
     http_response_code(204);
     exit;
 }
-
 $router = new Router();
 
+$pages = new PageController();
 $auth = new AuthController();
 $campaigns = new CampaignController();
 $contributions = new ContributionController();
 $payments = new PaymentController();
 $webhooks = new WebhookController();
+$maintenance = new MaintenanceController();
 
-// Racine : ce service est une API, ouvrir le domaine dans un navigateur ne
-// montre donc rien d'autre que ceci. Mieux vaut un index explicite qu'un
-// « Ressource introuvable » qui laisse croire à une panne.
-$router->get('/', static fn () => Response::json([
-    'service' => 'Sungku API',
-    'status' => 'ok',
-    'time' => gmdate('c'),
-    'endpoints' => [
-        'GET  /health',
-        'GET  /campaigns',
-        'GET  /campaigns/{slug}',
-        'GET  /campaigns/{slug}/contributions',
-        'POST /campaigns/{slug}/contributions',
-        'GET  /contributions/{id}',
-        'GET  /payments/providers',
-        'POST /payments/predict-provider',
-        'POST /auth/register',
-        'POST /auth/login',
-        'GET  /auth/me',
-    ],
-]));
+// ─── Pages ──────────────────────────────────────────────────────────────────
+// Rendues côté serveur : le socle n'a pas de chaîne de construction, et une
+// page de cagnotte doit rester lisible par les robots pour être partageable.
+$router->get('/', [$pages, 'home']);
+$router->get('/c/{slug}', [$pages, 'campaign']);
+$router->get('/connexion', [$pages, 'loginForm']);
+$router->post('/connexion', [$pages, 'login']);
+$router->post('/inscription', [$pages, 'register']);
+$router->get('/deconnexion', [$pages, 'logout']);
+$router->get('/creer', [$pages, 'createForm']);
+$router->post('/creer', [$pages, 'create']);
 
+// ─── API ────────────────────────────────────────────────────────────────────
+// Préfixée /api pour ne pas disputer l'espace d'URL aux pages : sans cela,
+// une cagnotte nommée « health » ou « campaigns » masquerait une route.
+$router->get('/api/health', static fn () => Response::json(['status' => 'ok', 'time' => gmdate('c')]));
 $router->get('/health', static fn () => Response::json(['status' => 'ok', 'time' => gmdate('c')]));
 
-$router->post('/auth/register', [$auth, 'register']);
-$router->post('/auth/login', [$auth, 'login']);
-$router->post('/auth/logout', [$auth, 'logout']);
-$router->get('/auth/me', [$auth, 'me']);
+$router->post('/api/auth/register', [$auth, 'register']);
+$router->post('/api/auth/login', [$auth, 'login']);
+$router->post('/api/auth/logout', [$auth, 'logout']);
+$router->get('/api/auth/me', [$auth, 'me']);
 
-$router->get('/campaigns', [$campaigns, 'index']);
-$router->post('/campaigns', [$campaigns, 'store']);
-$router->get('/campaigns/{slug}', [$campaigns, 'show']);
+$router->get('/api/campaigns', [$campaigns, 'index']);
+$router->post('/api/campaigns', [$campaigns, 'store']);
+$router->get('/api/campaigns/{slug}', [$campaigns, 'show']);
 
-$router->get('/campaigns/{slug}/contributions', [$contributions, 'index']);
-$router->post('/campaigns/{slug}/contributions', [$contributions, 'store']);
-$router->get('/contributions/{id}', [$contributions, 'show']);
+$router->get('/api/campaigns/{slug}/contributions', [$contributions, 'index']);
+$router->post('/api/campaigns/{slug}/contributions', [$contributions, 'store']);
+$router->get('/api/contributions/{id}', [$contributions, 'show']);
 
-$router->get('/payments/providers', [$payments, 'providers']);
-$router->post('/payments/predict-provider', [$payments, 'predict']);
+$router->get('/api/payments/providers', [$payments, 'providers']);
+$router->post('/api/payments/predict-provider', [$payments, 'predict']);
 
 // URL à déclarer dans le dashboard pawaPay (Callback URLs).
-$router->post('/payments/callbacks/pawapay', [$webhooks, 'pawapay']);
+$router->post('/api/payments/callbacks/pawapay', [$webhooks, 'pawapay']);
 
 // Exploitation : pas d'accès shell sur cet hébergement, ces deux routes en
 // tiennent lieu. Protégées par MIGRATE_KEY, inertes si la clé n'est pas définie.
-$maintenance = new MaintenanceController();
 $router->post('/internal/migrate', [$maintenance, 'migrate']);
 $router->get('/internal/status', [$maintenance, 'status']);
 

@@ -75,7 +75,7 @@ final class CampaignController
             return;
         }
 
-        $slug = self::uniqueSlug($title);
+        $slug = self::makeSlug($title);
 
         Db::execute(
             'INSERT INTO campaigns
@@ -109,7 +109,7 @@ final class CampaignController
         );
     }
 
-    private static function uniqueSlug(string $title): string
+    public static function makeSlug(string $title): string
     {
         $base = strtolower((string) iconv('UTF-8', 'ASCII//TRANSLIT', $title));
         $base = trim((string) preg_replace('/[^a-z0-9]+/', '-', $base), '-');

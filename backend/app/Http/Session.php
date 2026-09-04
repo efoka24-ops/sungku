@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Sungku\Http;
 
 use Sungku\Core\Db;
-use Sungku\Core\Env;
 use Sungku\Core\Response;
 
 /**
@@ -29,7 +28,14 @@ final class Session
             // inexploitable par une XSS. SameSite=Lax bloque l'usage du
             // cookie depuis un site tiers (CSRF).
             'httponly' => true,
-            'secure' => Env::isProduction(),
+            // Secure dès que la connexion l'est. Le lier à APP_ENV rendait la
+            // connexion impossible tant qu'AutoSSL n'était pas actif : le
+            // navigateur acceptait le cookie sans jamais le renvoyer.
+            //
+            // ⚠ Conséquence : en HTTP, la session circule en clair et reste
+            // rejouable. Activer le certificat et décommenter la redirection
+            // du .htaccess AVANT toute ouverture au public.
+            'secure' => ($_SERVER['HTTPS'] ?? '') === 'on',
             'samesite' => 'Lax',
         ]);
 
