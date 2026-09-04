@@ -9,6 +9,7 @@ use Sungku\Core\Env;
 use Sungku\Core\Logger;
 use Sungku\Mail\Notifications;
 use Sungku\Support\Msisdn;
+use Sungku\Support\Text;
 use Sungku\Support\Uuid;
 
 /**
@@ -277,20 +278,22 @@ final class DepositService
     }
 
     /**
-     * Libellé affiché au payeur au moment de la saisie du PIN. Les opérateurs
-     * imposent 4 à 22 caractères alphanumériques ; un libellé parlant
-     * améliore nettement le taux d'autorisation, le payeur reconnaissant ce
-     * qu'il paie.
+     * Libellé affiché au payeur au moment de la saisie du PIN.
+     *
+     * pawaPay impose 4 à 22 caractères, lettres, chiffres et espaces
+     * uniquement (champ customerMessage de POST /v2/deposits). Un libellé
+     * parlant améliore nettement le taux d'autorisation : le payeur reconnaît
+     * ce qu'il paie au lieu de voir un nom de marchand qui ne lui dit rien.
+     *
+     * ⚠ Ce champ s'AJOUTE au nom du compte marchand, il ne le remplace pas.
+     * Le « KERRY PAY MERE » qui s'affiche vient du nom enregistré chez
+     * pawaPay et ne se change que dans le tableau de bord, pas par l'API.
+     * Selon l'opérateur, le message peut par ailleurs être tronqué, voire
+     * ignoré : il ne faut donc jamais y faire porter une information
+     * indispensable.
      */
     public static function customerMessage(string $campaignTitle): string
     {
-        $clean = preg_replace('/[^A-Za-z0-9 ]/', ' ', $campaignTitle) ?? '';
-        $clean = trim((string) preg_replace('/\s+/', ' ', $clean));
-
-        if (mb_strlen($clean) < 4) {
-            return 'Cagnotte Sungku';
-        }
-
-        return mb_substr($clean, 0, 22);
+        return Text::customerMessage($campaignTitle);
     }
 }

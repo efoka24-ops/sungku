@@ -9,6 +9,7 @@ use Sungku\Core\Request;
 use Sungku\Core\Response;
 use Sungku\Http\Session;
 use Sungku\Payments\StatusMapper;
+use Sungku\Support\Text;
 
 final class CampaignController
 {
@@ -111,12 +112,8 @@ final class CampaignController
 
     public static function makeSlug(string $title): string
     {
-        $base = strtolower((string) iconv('UTF-8', 'ASCII//TRANSLIT', $title));
-        $base = trim((string) preg_replace('/[^a-z0-9]+/', '-', $base), '-');
-        $base = $base === '' ? 'cagnotte' : $base;
-
         // Suffixe aléatoire : deux « collecte-pour-maman » peuvent coexister
         // sans que la seconde création échoue sur la contrainte d'unicité.
-        return mb_substr($base, 0, 60) . '-' . bin2hex(random_bytes(3));
+        return Text::slug($title) . '-' . bin2hex(random_bytes(3));
     }
 }

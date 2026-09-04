@@ -62,9 +62,21 @@ final class PageController
 
         $collected = (int) array_sum(array_column($contributions, 'amount'));
 
+        // Le nom de l'organisateur rassure le contributeur, mais son e-mail
+        // ne sort jamais : la page est publique.
+        $organisateur = Db::selectOne(
+            'SELECT full_name FROM users WHERE id = :id',
+            ['id' => $campaign['organizer_id']],
+        );
+
         View::render(
             'campagne',
-            ['campaign' => $campaign, 'contributions' => $contributions, 'collected' => $collected],
+            [
+                'campaign' => $campaign,
+                'contributions' => $contributions,
+                'collected' => $collected,
+                'organisateur' => $organisateur['full_name'] ?? null,
+            ],
             $campaign['title'] . ' — Sungku',
         );
     }
