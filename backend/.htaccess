@@ -1,0 +1,42 @@
+# Racine web du sous-domaine sungku.trugroup.cm.
+#
+# Le compte FTP est cloisonné sur ce répertoire : le code applicatif ne peut
+# pas être placé au-dessus. La protection repose donc entièrement sur ces
+# règles et sur les .htaccess des sous-dossiers.
+
+RewriteEngine On
+
+# Forcer HTTPS AVANT toute autre règle : les cookies de session et les
+# callbacks pawaPay n'ont rien à faire en clair.
+RewriteCond %{HTTPS} !=on
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+# Refuser toute URL menant aux dossiers de code, quelle que soit la casse.
+# Les .htaccess qui s'y trouvent font déjà ce travail ; celui-ci les double au
+# cas où AllowOverride serait un jour restreint sur ce compte.
+RewriteRule ^(?i)(app|bin|database|storage)(/|$) - [F,L]
+
+# Tout le reste vers le front controller, sauf les fichiers réellement
+# présents (assets).
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [QSA,L]
+
+# L'en-tête Authorization est absorbé par certaines configurations CGI :
+# sans cette ligne, aucune authentification par en-tête ne remonte à PHP.
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+</IfModule>
+
+# Le .env porte le token pawaPay et les accès base : il partage le dossier
+# servi par Apache, il ne doit jamais en sortir.
+<FilesMatch "^\.env|^\.gitignore$|\.log$|\.sql$|\.md$">
+    Require all denied
+</FilesMatch>
+
+Options -Indexes

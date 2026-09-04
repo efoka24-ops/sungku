@@ -7,6 +7,7 @@ namespace Sungku\Payments;
 use Sungku\Core\Db;
 use Sungku\Core\Env;
 use Sungku\Core\Logger;
+use Sungku\Mail\Notifications;
 use Sungku\Support\Msisdn;
 use Sungku\Support\Uuid;
 
@@ -51,10 +52,10 @@ final class DepositService
         Db::execute(
             'INSERT INTO contributions
                 (id, campaign_id, deposit_id, amount, currency, provider, phone_number,
-                 contributor_name, is_anonymous, message, status, created_at, updated_at)
+                 contributor_name, contributor_email, is_anonymous, message, status, created_at, updated_at)
              VALUES
                 (:id, :campaign_id, :deposit_id, :amount, :currency, :provider, :phone_number,
-                 :contributor_name, :is_anonymous, :message, :status, NOW(), NOW())',
+                 :contributor_name, :contributor_email, :is_anonymous, :message, :status, NOW(), NOW())',
             [
                 'id' => $depositId, // même identifiant partout : un seul fil à tirer
                 'campaign_id' => $campaign['id'],
@@ -64,6 +65,10 @@ final class DepositService
                 'provider' => $provider,
                 'phone_number' => $msisdn,
                 'contributor_name' => ($input['isAnonymous'] ?? false) ? null : ($input['contributorName'] ?? null),
+                // L'adresse reste enregistrée même sur une contribution
+                // anonyme : l'anonymat vaut vis-à-vis du public, pas contre
+                // l'envoi du reçu à celui qui a payé.
+                'contributor_email' => $input['contributorEmail'] ?? null,
                 'is_anonymous' => (int) ($input['isAnonymous'] ?? false),
                 'message' => $input['message'] ?? null,
                 'status' => StatusMapper::PENDING,
@@ -181,7 +186,46 @@ final class DepositService
 
         Logger::payment('Statut rapproché', ['depositId' => $depositId, 'status' => $status]);
 
-        return $this->find($depositId);
+        $updated = $this->find($depositId);
+
+        if ($status === StatusMapper::CONFIRMED && $updated !== null) {
+            $this->notifyOnce($updated);
+        }
+
+        return $updated;
+    }
+
+    /**
+     * Envoie le reçu et l'alerte organisateur, une seule fois.
+     *
+     * Le callback pawaPay et le cron peuvent constater la confirmation à
+     * quelques secondes d'intervalle. On réclame donc le droit d'envoyer par
+     * un UPDATE conditionnel : une seule des deux exécutions verra
+     * rowCount() === 1, l'autre repartira sans rien envoyer. Vérifier puis
+     * écrire en deux temps laisserait au contraire une fenêtre pour un
+     * double reçu.
+     */
+    private function notifyOnce(array $contribution): void
+    {
+        $claimed = Db::execute(
+            'UPDATE contributions SET notified_at = NOW() WHERE id = :id AND notified_at IS NULL',
+            ['id' => $contribution['id']],
+        );
+
+        if ($claimed !== 1) {
+            return;
+        }
+
+        try {
+            Notifications::make()->contributionConfirmed($contribution);
+        } catch (\Throwable $e) {
+            // Une messagerie indisponible ne remet pas en cause un
+            // encaissement abouti : on trace et on continue.
+            Logger::write('mail', 'Notification de contribution en échec', [
+                'depositId' => $contribution['id'],
+                'erreur' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

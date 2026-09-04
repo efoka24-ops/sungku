@@ -6,26 +6,31 @@ hébergement mutualisé cPanel déployé par FTPS.
 ## Arborescence
 
 ```
-sungku/                   ← racine applicative, HORS du dossier web
-├── .env                  secrets — jamais versionné, jamais servi
+/home/trugro9159/sungku/  ← racine web du sous-domaine
+├── index.php             front controller unique
+├── .htaccess             réécriture, HTTPS forcé, refus des dossiers de code
+├── .env                  secrets — jamais versionné, refusé par .htaccess
 ├── autoload.php          autoloader PSR-4 : Sungku\ → app/
-├── app/
+├── app/                  + .htaccess « Require all denied »
 │   ├── Core/             Env, Db, Router, Request, Response, Logger
 │   ├── Http/             Session + contrôleurs
+│   ├── Mail/             Mailer SMTP, Notifications
 │   ├── Payments/         PawaPayClient, DepositService, StatusMapper
 │   └── Support/          Uuid, Msisdn
-├── bin/                  migrate.php, reconcile.php
-├── database/migrations/  SQL numérotées, rejouables
-├── storage/logs/         journaux applicatifs
-└── public_html/          ← seul dossier exposé par Apache
-    ├── index.php         front controller unique
-    └── .htaccess
+├── bin/                  migrate.php, reconcile.php        + deny
+├── database/migrations/  SQL numérotées, rejouables         + deny
+└── storage/logs/         journaux applicatifs               + deny
 ```
 
-**Le code vit un cran au-dessus de `public_html`.** Une erreur de configuration
-Apache sur un `.php` en renvoie le code source ; si ce fichier contient le token
-pawaPay, le compte marchand est compromis. Hors du dossier web, le risque
-n'existe pas.
+**Le code partage le dossier servi par Apache, et c'est subi.** Le compte FTP
+est cloisonné sur `/home/trugro9159/sungku`, qui est aussi la racine web du
+sous-domaine : impossible de placer le code au-dessus. La protection repose
+donc sur deux couches — une règle de réécriture `[F]` dans le `.htaccess`
+racine, et un `Require all denied` dans chaque dossier de code. Le `.env`, qui
+porte le token pawaPay et les accès base, est refusé par nom de fichier.
+
+Si l'hébergeur permet un jour de déplacer la racine web vers un sous-dossier,
+c'est la meilleure des corrections : la question ne se poserait plus.
 
 **Pas de Composer.** Le déploiement se fait par FTP et l'accès shell n'est pas
 garanti : un `vendor/` de plusieurs milliers de fichiers rendrait chaque
@@ -82,6 +87,29 @@ contribution en attente pour toujours et l'argent encaissé n'est jamais crédit
 | `NEEDS_ATTENTION` | issue indéterminée — **ne jamais traiter comme un échec** |
 
 Seules les `CONFIRMED` alimentent la jauge et le mur des contributeurs.
+
+## Messagerie
+
+Client SMTP authentifié écrit sur sockets (`app/Mail/Mailer.php`), sans
+dépendance. `mail()` n'est pas utilisé : sur mutualisé il part avec l'identité
+de l'utilisateur système, sans authentification, et les messages finissent en
+indésirable — inacceptable pour un reçu de paiement. Passer par le compte
+`noreply@` authentifié aligne l'expéditeur sur le domaine et respecte SPF.
+
+Deux messages partent à la confirmation d'une contribution : le reçu au
+contributeur — si et seulement s'il a laissé une adresse, facultative pour un
+paiement mobile money — et l'alerte à l'organisateur avec le total collecté.
+Un troisième prévient `ADMIN_ALERT_EMAIL` quand une transaction passe en
+`NEEDS_ATTENTION`.
+
+**Un seul envoi par contribution.** Le callback pawaPay et le cron peuvent
+constater la confirmation à quelques secondes d'intervalle ; le droit
+d'envoyer est réclamé par un `UPDATE … WHERE notified_at IS NULL` atomique,
+donc une seule des deux exécutions envoie. Un test suivi d'une écriture
+laisserait une fenêtre pour un double reçu.
+
+Un incident de messagerie n'interrompt jamais un paiement : l'envoi est tracé
+dans `storage/logs/mail-*.log` et l'erreur avalée.
 
 ## Installation
 

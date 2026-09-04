@@ -14,7 +14,7 @@ Paiements traités via l'**API Merchant pawaPay v2**.
 | | |
 |---|---|
 | Domaine | `sungku.trugroup.cm` |
-| Racine web | `/home/trugro9159/sungku/public_html` |
+| Racine web | `/home/trugro9159/sungku` |
 | Base | MySQL 8 (`phpMyAdmin` : `pma-12.camoo.net`) |
 | Livraison | GitHub Actions → FTPS, sur poussée `main` touchant `backend/` |
 

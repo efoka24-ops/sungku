@@ -69,6 +69,11 @@ foreach ($pending as $row) {
         );
 
         Logger::payment('Passée en vérification humaine', ['depositId' => $depositId, 'ageHeures' => (int) ($age / 3600)]);
+
+        // Une transaction indéterminée qui dort dans une table ne se résout
+        // jamais : il faut qu'un humain soit prévenu le jour même.
+        \Sungku\Mail\Notifications::make()->needsAttention($contribution);
+
         ++$flagged;
     }
 }

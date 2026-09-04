@@ -21,9 +21,13 @@ use Sungku\Http\Controllers\ContributionController;
 use Sungku\Http\Controllers\PaymentController;
 use Sungku\Http\Controllers\WebhookController;
 
-// Le code applicatif vit un cran au-dessus du dossier web : même mal
-// configuré, Apache ne peut pas servir le .env ni les classes.
-$root = dirname(__DIR__);
+// La racine web du sous-domaine EST ce dossier : app/, bin/, database/ et le
+// .env s'y trouvent donc aussi. Ils ne sont pas servis pour autant — le
+// .htaccess d'à côté refuse le .env et chaque dossier de code porte le sien
+// avec un « Require all denied ». C'est le prix de l'hébergement mutualisé,
+// dont le compte FTP est cloisonné sur ce répertoire : impossible de placer
+// le code ailleurs.
+$root = __DIR__;
 
 require $root . '/autoload.php';
 

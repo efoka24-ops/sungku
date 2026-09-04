@@ -90,6 +90,7 @@ final class ContributionController
                 'phoneNumber' => $phone,
                 'provider' => $request->string('provider') ?: null,
                 'contributorName' => $request->string('contributorName') ?: null,
+                'contributorEmail' => self::validEmail($request->string('contributorEmail')),
                 'isAnonymous' => $request->bool('isAnonymous'),
                 'message' => $request->string('message') ?: null,
             ]);
@@ -121,6 +122,16 @@ final class ContributionController
             'phoneNumber' => Msisdn::mask((string) $contribution['phone_number']),
             'message' => 'Validez le paiement avec votre code PIN sur votre téléphone.',
         ], 201);
+    }
+
+    /**
+     * L'adresse du contributeur est facultative — payer par mobile money n'en
+     * exige aucune. Une saisie invalide n'est donc pas une erreur bloquante :
+     * on l'ignore, et le paiement suit son cours sans reçu.
+     */
+    private static function validEmail(string $email): ?string
+    {
+        return filter_var($email, FILTER_VALIDATE_EMAIL) ? mb_strtolower($email) : null;
     }
 
     /**
