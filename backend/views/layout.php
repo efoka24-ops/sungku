@@ -34,10 +34,10 @@ use Sungku\Http\View;
     </nav>
     <div class="actions">
       <?php if (Session::userId() !== null): ?>
-        <a class="btn fantome" href="/tableau-de-bord">Tableau de bord</a>
-        <?php if (Session::has('ADMIN')): ?>
-          <a class="btn fantome" href="/admin">Admin</a>
-        <?php endif; ?>
+        <?php // Une seule entrée : elle mène à l'espace du compte connecté. ?>
+        <a class="btn fantome" href="<?= Session::landingPath() ?>">
+          <?= Session::has('ADMIN') ? 'Administration' : 'Mon espace' ?>
+        </a>
         <a class="btn" href="/creer">Créer une collecte</a>
       <?php else: ?>
         <a class="btn fantome" href="/connexion">Connexion</a>

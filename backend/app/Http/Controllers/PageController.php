@@ -130,7 +130,11 @@ final class PageController
         Db::execute('DELETE FROM login_attempts WHERE email = :e AND ip = :i', ['e' => $email, 'i' => $ip]);
 
         Session::login($userId, Session::rolesOf($userId));
-        self::redirect('/');
+
+        // Aiguillage d'après les rôles chargés à l'instant : l'utilisateur
+        // arrive dans son espace sans avoir à deviner quelle adresse le
+        // concerne.
+        self::redirect(Session::landingPath());
     }
 
     /** Cinq échecs en quinze minutes pour un même couple compte / origine. */
@@ -193,8 +197,11 @@ final class PageController
             return;
         }
 
+        // Un compte se crée toujours organisateur. Le rôle ADMIN ne s'obtient
+        // pas en cochant une case à l'inscription : il s'attribue depuis la
+        // route d'exploitation, sinon n'importe qui se promeut lui-même.
         Session::login($userId, ['ORGANIZER']);
-        self::redirect('/creer');
+        self::redirect(Session::landingPath());
     }
 
     public function logout(Request $request): void

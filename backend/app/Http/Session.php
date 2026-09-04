@@ -140,6 +140,27 @@ final class Session
         return in_array($role, self::roles(), true);
     }
 
+    /**
+     * Espace d'atterrissage du compte, déduit de ses rôles.
+     *
+     * L'utilisateur n'a pas à savoir quelle adresse correspond à son profil :
+     * après connexion, il arrive directement là où il a quelque chose à
+     * faire. Un administrateur est d'abord un administrateur — c'est le rôle
+     * le plus large, il prime sur les autres.
+     */
+    public static function landingPath(): string
+    {
+        if (self::has('ADMIN')) {
+            return '/admin';
+        }
+
+        if (self::has('API_MERCHANT')) {
+            return '/tableau-de-bord';
+        }
+
+        return '/tableau-de-bord';
+    }
+
     /** Interrompt la requête si l'utilisateur n'est pas connecté. */
     public static function requireUser(): int
     {
