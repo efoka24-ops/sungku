@@ -65,11 +65,15 @@ use Sungku\Http\View;
           $goal = (int) $c['goal_amount'];
       ?>
         <a class="carte" href="/c/<?= View::e($c['slug']) ?>" style="display:block;color:inherit;padding:0;overflow:hidden">
-          <div style="height:140px;background:linear-gradient(135deg,var(--violet-soft),var(--surface-2));
-                      display:flex;align-items:center;justify-content:center">
-            <svg width="42" height="42" viewBox="0 0 24 24" fill="var(--violet)" opacity=".55">
-              <circle cx="9" cy="10" r="6"/><circle cx="15" cy="15" r="6" opacity=".6"/>
-            </svg>
+          <div style="height:140px;display:flex;align-items:center;justify-content:center;
+                      background:<?= $c['cover_path']
+                          ? "url('" . View::e($c['cover_path']) . "') center/cover no-repeat"
+                          : 'linear-gradient(135deg,var(--violet-soft),var(--surface-2))' ?>">
+            <?php if (empty($c['cover_path'])): ?>
+              <svg width="42" height="42" viewBox="0 0 24 24" fill="var(--violet)" opacity=".55">
+                <circle cx="9" cy="10" r="6"/><circle cx="15" cy="15" r="6" opacity=".6"/>
+              </svg>
+            <?php endif; ?>
           </div>
           <div style="padding:20px">
             <div style="font-size:12px;color:var(--ink-dim);letter-spacing:.06em;

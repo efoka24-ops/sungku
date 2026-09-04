@@ -8,6 +8,7 @@ use Sungku\Core\Db;
 use Sungku\Core\Request;
 use Sungku\Http\Session;
 use Sungku\Http\View;
+use Sungku\Payments\Balance;
 use Sungku\Payments\StatusMapper;
 
 /**
@@ -57,9 +58,29 @@ final class DashboardController
             ],
         );
 
+        // Solde, commission et reversements sont agrégés à partir du solde de
+        // chaque collecte : la règle de calcul ne vit qu'à un seul endroit.
+        $solde = ['disponible' => 0, 'commission' => 0, 'reverse' => 0, 'en_cours' => 0];
+
+        foreach ($campaigns as $i => $c) {
+            $b = Balance::forCampaign((int) $c['id']);
+            $campaigns[$i]['balance'] = $b;
+
+            $solde['disponible'] += $b['available'];
+            $solde['commission'] += $b['fee'];
+            $solde['reverse'] += $b['paid'];
+            $solde['en_cours'] += $b['pending'];
+        }
+
         View::render(
             'tableau-organisateur',
-            ['campaigns' => $campaigns, 'totaux' => $totaux, 'onglet' => 'collectes', 'espace' => 'organisateur'],
+            [
+                'campaigns' => $campaigns,
+                'totaux' => $totaux,
+                'solde' => $solde,
+                'onglet' => 'collectes',
+                'espace' => 'organisateur',
+            ],
             'Mes collectes — Sungku',
             'layout-app',
         );

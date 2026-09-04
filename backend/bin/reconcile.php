@@ -78,10 +78,29 @@ foreach ($pending as $row) {
     }
 }
 
+// Les reversements suivent la même règle : un callback perdu laisserait un
+// envoi en attente indéfiniment, et son montant resterait bloqué hors du
+// solde disponible de l'organisateur.
+$payouts = new \Sungku\Payments\PayoutService();
+$reversements = 0;
+
+foreach ($payouts->stale($minutes) as $row) {
+    try {
+        $payouts->refresh((string) $row['id']);
+        ++$reversements;
+    } catch (Throwable $e) {
+        Logger::payment('Rapprochement de reversement en échec', [
+            'payoutId' => $row['id'],
+            'erreur' => $e->getMessage(),
+        ]);
+    }
+}
+
 printf(
-    "[%s] %d en attente examinées, %d tranchées, %d à vérifier manuellement.\n",
+    "[%s] %d contributions examinées, %d tranchées, %d à vérifier ; %d reversements rapprochés.\n",
     gmdate('c'),
     count($pending),
     $resolved,
     $flagged,
+    $reversements,
 );

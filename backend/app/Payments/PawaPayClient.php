@@ -93,6 +93,62 @@ final class PawaPayClient
         return $this->request('GET', '/v2/deposits/' . rawurlencode($depositId));
     }
 
+    /**
+     * Envoie de l'argent vers un portefeuille mobile money, depuis le solde du
+     * compte marchand. Même asymétrie que le dépôt : la réponse est immédiate
+     * mais non finale.
+     *
+     * @param array<string, mixed> $metadata
+     * @return array{payoutId: string, status: string, failureReason?: array}
+     */
+    public function createPayout(
+        string $payoutId,
+        string $amount,
+        string $currency,
+        string $phoneNumber,
+        string $provider,
+        ?string $customerMessage = null,
+        ?string $clientReferenceId = null,
+        array $metadata = [],
+    ): array {
+        $payload = [
+            'payoutId' => $payoutId,
+            'amount' => $amount,
+            'currency' => $currency,
+            'recipient' => [
+                'type' => 'MMO',
+                'accountDetails' => [
+                    'phoneNumber' => $phoneNumber,
+                    'provider' => $provider,
+                ],
+            ],
+        ];
+
+        if ($customerMessage !== null) {
+            $payload['customerMessage'] = $customerMessage;
+        }
+
+        if ($clientReferenceId !== null) {
+            $payload['clientReferenceId'] = $clientReferenceId;
+        }
+
+        if ($metadata !== []) {
+            $payload['metadata'] = array_map(
+                static fn (string $k, mixed $v): array => [$k => (string) $v],
+                array_keys($metadata),
+                array_values($metadata),
+            );
+        }
+
+        return $this->request('POST', '/v2/payouts', $payload);
+    }
+
+    /** @return array<string, mixed> */
+    public function getPayout(string $payoutId): array
+    {
+        return $this->request('GET', '/v2/payouts/' . rawurlencode($payoutId));
+    }
+
     /** @return array<string, mixed> */
     public function createRefund(string $refundId, string $depositId, ?string $amount = null): array
     {

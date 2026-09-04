@@ -1,0 +1,19 @@
+# Dossier des images de couverture, écrit par les visiteurs.
+#
+# Tout ce qui pourrait être interprété est refusé : une image reste une image
+# valide pour getimagesize() même si elle contient du code dans ses
+# métadonnées. Si le serveur acceptait de l'exécuter, envoyer une photo
+# deviendrait une prise de contrôle.
+#
+# Seules FilesMatch et Require/Deny sont utilisées ici : RemoveHandler,
+# RemoveType et php_flag ne sont pas autorisées sur cet hébergement et y
+# provoquent une erreur 500 sur TOUT le dossier — image comprise.
+<FilesMatch "(?i)\.(php|phtml|phar|pht|php[0-9]|phps|cgi|pl|py|sh|htaccess|html?|xml|svg)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>

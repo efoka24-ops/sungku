@@ -90,6 +90,19 @@ $router->get('/admin/utilisateurs', [$admin, 'users']);
 $router->post('/admin/moderation', [$admin, 'moderate']);
 $router->post('/admin/revalider', [$admin, 'recheck']);
 
+$router->get('/admin/reversements', [$admin, 'payouts']);
+$router->post('/admin/reversements', [$admin, 'sendPayout']);
+$router->post('/admin/reversements/verifier', [$admin, 'recheckPayout']);
+
+$router->get('/admin/parametres', [$admin, 'settings']);
+$router->post('/admin/parametres', [$admin, 'saveSettings']);
+
+$router->get('/admin/collectes/{id}', [$admin, 'editCampaign']);
+$router->post('/admin/collectes/modifier', [$admin, 'updateCampaign']);
+$router->post('/admin/collectes/supprimer', [$admin, 'deleteCampaign']);
+
+$router->post('/admin/utilisateurs/role', [$admin, 'toggleRole']);
+
 // ─── API ────────────────────────────────────────────────────────────────────
 // Préfixée /api pour ne pas disputer l'espace d'URL aux pages : sans cela,
 // une cagnotte nommée « health » ou « campaigns » masquerait une route.

@@ -26,6 +26,33 @@ use Sungku\Http\View;
   </div>
 </div>
 
+<div class="stats">
+  <div class="stat">
+    <div class="libelle">Solde reversable</div>
+    <div class="valeur" style="color:var(--violet)"><?= View::fcfa((int) $solde['disponible']) ?></div>
+  </div>
+  <div class="stat">
+    <div class="libelle">Commissions retenues</div>
+    <div class="valeur"><?= View::fcfa((int) $solde['commission']) ?></div>
+  </div>
+  <div class="stat">
+    <div class="libelle">Déjà reversé</div>
+    <div class="valeur"><?= View::fcfa((int) $solde['reverse']) ?></div>
+  </div>
+  <div class="stat">
+    <div class="libelle">Reversement en cours</div>
+    <div class="valeur" style="<?= (int) $solde['en_cours'] > 0 ? 'color:var(--warning)' : '' ?>">
+      <?= View::fcfa((int) $solde['en_cours']) ?>
+    </div>
+  </div>
+</div>
+
+<p style="color:var(--ink-dim);font-size:13px;margin:-16px 0 28px">
+  Le solde reversable est le montant confirmé, moins ce qui vous a déjà été
+  envoyé. La commission est retenue au moment du reversement, au taux que vous
+  avez accepté à la création de chaque collecte.
+</p>
+
 <div class="table">
   <div class="entete" style="grid-template-columns:2.2fr 1.2fr 1.2fr 1fr 1fr">
     <span>Collecte</span><span>Collecté</span><span>Objectif</span><span>État</span><span></span>

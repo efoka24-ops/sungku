@@ -12,12 +12,17 @@ $goal = (int) $campaign['goal_amount'];
      display:grid;grid-template-columns:1.3fr 0.7fr;gap:40px" id="grille">
 
   <div>
+    <?php // L'URL de l'image passe par rawurlencode : elle vient de la base. ?>
     <div style="height:280px;border-radius:14px;margin-bottom:24px;
-                background:linear-gradient(135deg,var(--violet-soft),var(--surface-2));
+                background:<?= $campaign['cover_path']
+                    ? "url('" . View::e($campaign['cover_path']) . "') center/cover no-repeat"
+                    : 'linear-gradient(135deg,var(--violet-soft),var(--surface-2))' ?>;
                 display:flex;align-items:center;justify-content:center">
-      <svg width="64" height="64" viewBox="0 0 24 24" fill="var(--violet)" opacity=".5">
-        <circle cx="9" cy="10" r="6"/><circle cx="15" cy="15" r="6" opacity=".6"/>
-      </svg>
+      <?php if (empty($campaign['cover_path'])): ?>
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="var(--violet)" opacity=".5">
+          <circle cx="9" cy="10" r="6"/><circle cx="15" cy="15" r="6" opacity=".6"/>
+        </svg>
+      <?php endif; ?>
     </div>
 
     <h1 style="font-size:30px;margin:0 0 8px"><?= View::e($campaign['title']) ?></h1>

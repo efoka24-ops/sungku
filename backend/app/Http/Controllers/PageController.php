@@ -7,10 +7,13 @@ namespace Sungku\Http\Controllers;
 use PDOException;
 use Sungku\Core\Db;
 use Sungku\Core\Request;
+use Sungku\Core\Settings;
 use Sungku\Http\Csrf;
 use Sungku\Http\Session;
 use Sungku\Http\View;
 use Sungku\Payments\StatusMapper;
+use Sungku\Support\Msisdn;
+use Sungku\Support\Upload;
 
 /**
  * Pages HTML.
@@ -23,10 +26,21 @@ use Sungku\Payments\StatusMapper;
  */
 final class PageController
 {
+    /** Catégories proposées, et leur libellé affiché. */
+    public const CATEGORIES = [
+        'EDUCATION' => 'Éducation',
+        'SANTE' => 'Santé',
+        'FUNERAILLES' => 'Funérailles',
+        'PROJET_COMMUNAUTAIRE' => 'Projet communautaire',
+        'ENTREPRISE' => 'Entreprise',
+        'TONTINE' => 'Tontine',
+        'AUTRE' => 'Événement personnel',
+    ];
+
     public function home(Request $request): void
     {
         $campaigns = Db::select(
-            'SELECT c.slug, c.title, c.category, c.goal_amount,
+            'SELECT c.slug, c.title, c.category, c.goal_amount, c.cover_path,
                     COALESCE(SUM(ct.amount), 0) AS collected
                FROM campaigns c
                LEFT JOIN contributions ct
@@ -218,7 +232,15 @@ final class PageController
             return;
         }
 
-        View::render('creer', ['erreur' => $erreur], 'Créer une cagnotte — Sungku');
+        View::render(
+            'creer',
+            [
+                'erreur' => $erreur,
+                'fees' => Settings::fees(),
+                'categories' => self::CATEGORIES,
+            ],
+            'Créer une collecte — Sungku',
+        );
     }
 
     public function create(Request $request): void
@@ -239,6 +261,7 @@ final class PageController
         $title = trim((string) ($_POST['title'] ?? ''));
         $goal = (int) ($_POST['goalAmount'] ?? 0);
         $category = strtoupper(trim((string) ($_POST['category'] ?? 'AUTRE')));
+        $payoutPhone = Msisdn::normalise((string) ($_POST['payoutPhone'] ?? ''));
 
         if ($title === '' || $goal <= 0) {
             $this->createForm($request, [], 'Le titre et un objectif positif sont requis.');
@@ -246,21 +269,58 @@ final class PageController
             return;
         }
 
+        if (!Msisdn::isPlausible($payoutPhone)) {
+            $this->createForm($request, [], 'Le numéro de reversement est invalide.');
+
+            return;
+        }
+
+        // L'acceptation est vérifiée côté serveur, pas seulement par la case du
+        // formulaire : une case cochée en HTML ne prouve rien, et le taux est
+        // une clause contractuelle.
+        if (($_POST['acceptTerms'] ?? '') !== '1') {
+            $this->createForm($request, [], 'Vous devez accepter les conditions générales.');
+
+            return;
+        }
+
+        if (!array_key_exists($category, self::CATEGORIES)) {
+            $category = 'AUTRE';
+        }
+
+        try {
+            $cover = Upload::coverImage($_FILES['cover'] ?? []);
+        } catch (\RuntimeException $e) {
+            $this->createForm($request, [], $e->getMessage());
+
+            return;
+        }
+
+        // Le taux est lu ici et figé sur la collecte : c'est celui que
+        // l'organisateur vient d'avoir sous les yeux. Le relire au moment du
+        // reversement appliquerait une grille qu'il n'a jamais acceptée.
+        $rate = Settings::feeFor($category);
         $slug = CampaignController::makeSlug($title);
 
         Db::execute(
             'INSERT INTO campaigns
-                (slug, title, description, category, goal_amount, currency, organizer_id,
+                (slug, title, description, cover_path, category, goal_amount, fee_rate,
+                 terms_version, terms_accepted_at, payout_phone, currency, organizer_id,
                  status, moderation_status, created_at, updated_at)
              VALUES
-                (:slug, :title, :description, :category, :goal, "XAF", :organizer,
+                (:slug, :title, :description, :cover, :category, :goal, :rate,
+                 :version, NOW(), :phone, "XAF", :organizer,
                  "ACTIVE", :moderation, NOW(), NOW())',
             [
                 'slug' => $slug,
                 'title' => $title,
                 'description' => trim((string) ($_POST['description'] ?? '')) ?: null,
+                'cover' => $cover,
                 'category' => $category,
                 'goal' => $goal,
+                'rate' => $rate,
+                'version' => Settings::TERMS_VERSION,
+                'phone' => $payoutPhone,
                 'organizer' => $userId,
                 'moderation' => in_array($category, ['SANTE', 'FUNERAILLES'], true) ? 'PENDING' : 'APPROVED',
             ],

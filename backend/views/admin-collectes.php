@@ -56,6 +56,17 @@ use Sungku\Http\View;
               <button class="btn fantome" type="submit" style="padding:6px 12px;font-size:13px">Refuser</button>
             </form>
           <?php endif; ?>
+
+          <a class="btn fantome" href="/admin/collectes/<?= (int) $c['id'] ?>"
+             style="padding:6px 12px;font-size:13px">Modifier</a>
+
+          <form method="post" action="/admin/collectes/supprimer" style="margin:0"
+                onsubmit="return confirm('Supprimer définitivement cette collecte ?')">
+            <?= Csrf::field() ?>
+            <input type="hidden" name="id" value="<?= (int) $c['id'] ?>">
+            <button class="btn fantome" type="submit"
+                    style="padding:6px 12px;font-size:13px;color:var(--danger)">Supprimer</button>
+          </form>
         </span>
       </div>
     <?php endforeach; ?>

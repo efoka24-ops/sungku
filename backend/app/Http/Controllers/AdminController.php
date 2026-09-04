@@ -7,11 +7,17 @@ namespace Sungku\Http\Controllers;
 use Sungku\Core\Db;
 use Sungku\Core\Logger;
 use Sungku\Core\Request;
+use Sungku\Core\Settings;
 use Sungku\Http\Csrf;
 use Sungku\Http\Session;
 use Sungku\Http\View;
+use Sungku\Payments\Balance;
 use Sungku\Payments\DepositService;
+use Sungku\Payments\PawaPayException;
+use Sungku\Payments\PayoutService;
 use Sungku\Payments\StatusMapper;
+use Sungku\Support\Msisdn;
+use Sungku\Support\Upload;
 
 /**
  * Back-office.
@@ -150,6 +156,343 @@ final class AdminController
             'Utilisateurs — Admin Sungku',
             'layout-app',
         );
+    }
+
+    /** Reversements : soldes par collecte, envoi, historique. */
+    public function payouts(Request $request): void
+    {
+        Session::requireRole('ADMIN');
+
+        $campaigns = Db::select(
+            'SELECT c.id, c.slug, c.title, c.fee_rate, c.payout_phone,
+                    u.full_name AS organisateur, u.email AS organizer_email
+               FROM campaigns c
+               JOIN users u ON u.id = c.organizer_id
+              ORDER BY c.created_at DESC
+              LIMIT 200',
+        );
+
+        // Le solde est calculé collecte par collecte : il dépend des
+        // contributions confirmées ET des reversements déjà engagés.
+        foreach ($campaigns as $i => $c) {
+            $campaigns[$i]['balance'] = Balance::forCampaign((int) $c['id']);
+        }
+
+        $historique = Db::select(
+            'SELECT p.*, c.title, c.slug
+               FROM payouts p
+               JOIN campaigns c ON c.id = p.campaign_id
+              ORDER BY p.created_at DESC
+              LIMIT 100',
+        );
+
+        View::render(
+            'admin-reversements',
+            [
+                'campaigns' => $campaigns,
+                'historique' => $historique,
+                'plateforme' => Balance::platform(),
+                'message' => $_GET['message'] ?? null,
+                'erreur' => $_GET['erreur'] ?? null,
+                'onglet' => 'reversements',
+                'espace' => 'admin',
+            ],
+            'Reversements — Admin Sungku',
+            'layout-app',
+        );
+    }
+
+    /** Envoi effectif du reversement à l'organisateur. */
+    public function sendPayout(Request $request): void
+    {
+        $adminId = Session::requireRole('ADMIN');
+
+        if (!Csrf::isValid($_POST['_csrf'] ?? null)) {
+            self::redirect('/admin/reversements');
+
+            return;
+        }
+
+        $campaignId = (int) ($_POST['campaign_id'] ?? 0);
+        $montant = (int) ($_POST['amount'] ?? 0);
+        $phone = trim((string) ($_POST['phone'] ?? ''));
+
+        try {
+            $resultat = (new PayoutService())->send($campaignId, $montant, $phone, $adminId);
+
+            Logger::write('admin', 'Reversement déclenché', [
+                'collecte' => $campaignId,
+                'brut' => $montant,
+                'net' => $resultat['payout']['amount'] ?? null,
+                'par' => $adminId,
+            ]);
+
+            self::redirect('/admin/reversements?message=' . rawurlencode(
+                'Reversement envoyé. L’organisateur recevra les fonds une fois confirmé par l’opérateur.',
+            ));
+        } catch (PawaPayException $e) {
+            // Une issue indéterminée n'est pas un échec : le reversement reste
+            // en attente et le message doit dissuader de recommencer.
+            self::redirect('/admin/reversements?erreur=' . rawurlencode(
+                $e->isIndeterminate()
+                    ? 'Réponse non reçue de l’opérateur. Le reversement reste en attente — ne le relancez pas, vérifiez son statut dans quelques minutes.'
+                    : $e->getMessage(),
+            ));
+        } catch (\Throwable $e) {
+            self::redirect('/admin/reversements?erreur=' . rawurlencode($e->getMessage()));
+        }
+    }
+
+    /** Relit l'état d'un reversement auprès de l'opérateur. */
+    public function recheckPayout(Request $request): void
+    {
+        Session::requireRole('ADMIN');
+
+        if (Csrf::isValid($_POST['_csrf'] ?? null)) {
+            try {
+                (new PayoutService())->refresh((string) ($_POST['id'] ?? ''));
+            } catch (\Throwable $e) {
+                Logger::write('admin', 'Relecture de reversement en échec', ['erreur' => $e->getMessage()]);
+            }
+        }
+
+        self::redirect('/admin/reversements');
+    }
+
+    /** Grille des commissions. */
+    public function settings(Request $request): void
+    {
+        Session::requireRole('ADMIN');
+
+        View::render(
+            'admin-parametres',
+            [
+                'fees' => Settings::fees(),
+                'categories' => PageController::CATEGORIES,
+                'message' => $_GET['message'] ?? null,
+                'onglet' => 'parametres',
+                'espace' => 'admin',
+            ],
+            'Commissions — Admin Sungku',
+            'layout-app',
+        );
+    }
+
+    public function saveSettings(Request $request): void
+    {
+        Session::requireRole('ADMIN');
+
+        if (!Csrf::isValid($_POST['_csrf'] ?? null)) {
+            self::redirect('/admin/parametres');
+
+            return;
+        }
+
+        // On part de la grille en vigueur et on ne remplace que les champs
+        // réellement soumis. Lire un champ absent comme « 0 » rendrait la
+        // catégorie gratuite au premier envoi partiel du formulaire — perte
+        // silencieuse de recette, sans que personne ait décidé quoi que ce soit.
+        $fees = Settings::fees();
+
+        foreach (PageController::CATEGORIES as $code => $libelle) {
+            $soumis = $_POST['fee_' . $code] ?? null;
+
+            if ($soumis === null || trim((string) $soumis) === '') {
+                continue;
+            }
+
+            $fees[$code] = (float) str_replace(',', '.', (string) $soumis);
+        }
+
+        Settings::saveFees($fees);
+
+        Logger::write('admin', 'Grille de commissions modifiée', ['par' => Session::userId(), 'fees' => $fees]);
+
+        self::redirect('/admin/parametres?message=' . rawurlencode(
+            'Grille enregistrée. Elle s’applique aux collectes créées à partir de maintenant ; celles déjà ouvertes gardent le taux qu’elles ont accepté.',
+        ));
+    }
+
+    /** Édition d'une collecte par un administrateur. */
+    public function editCampaign(Request $request, array $params): void
+    {
+        Session::requireRole('ADMIN');
+
+        $campaign = CampaignController::findBySlugOrId($params['id']);
+        if ($campaign === null) {
+            http_response_code(404);
+            View::render('introuvable', [], 'Collecte introuvable', 'layout-app');
+
+            return;
+        }
+
+        View::render(
+            'admin-collecte',
+            [
+                'campaign' => $campaign,
+                'categories' => PageController::CATEGORIES,
+                'balance' => Balance::forCampaign((int) $campaign['id']),
+                'onglet' => 'collectes',
+                'espace' => 'admin',
+            ],
+            'Modifier — Admin Sungku',
+            'layout-app',
+        );
+    }
+
+    public function updateCampaign(Request $request): void
+    {
+        Session::requireRole('ADMIN');
+
+        if (!Csrf::isValid($_POST['_csrf'] ?? null)) {
+            self::redirect('/admin/collectes');
+
+            return;
+        }
+
+        $id = (int) ($_POST['id'] ?? 0);
+        $category = strtoupper(trim((string) ($_POST['category'] ?? 'AUTRE')));
+
+        if (!array_key_exists($category, PageController::CATEGORIES)) {
+            $category = 'AUTRE';
+        }
+
+        // Le taux n'est PAS remis à celui de la grille en changeant de
+        // catégorie : il reste celui accepté par l'organisateur. Le modifier
+        // demande une action explicite, tracée ci-dessous.
+        Db::execute(
+            'UPDATE campaigns
+                SET title = :title, description = :description, category = :category,
+                    goal_amount = :goal, status = :status, payout_phone = :phone,
+                    updated_at = NOW()
+              WHERE id = :id',
+            [
+                'title' => trim((string) ($_POST['title'] ?? '')),
+                'description' => trim((string) ($_POST['description'] ?? '')) ?: null,
+                'category' => $category,
+                'goal' => max(1, (int) ($_POST['goalAmount'] ?? 0)),
+                'status' => ($_POST['status'] ?? 'ACTIVE') === 'CLOSED' ? 'CLOSED' : 'ACTIVE',
+                'phone' => Msisdn::normalise((string) ($_POST['payoutPhone'] ?? '')),
+                'id' => $id,
+            ],
+        );
+
+        if (isset($_POST['fee_rate']) && $_POST['fee_rate'] !== '') {
+            $nouveauTaux = max(0.0, min(20.0, (float) str_replace(',', '.', (string) $_POST['fee_rate'])));
+
+            Db::execute('UPDATE campaigns SET fee_rate = :r WHERE id = :id', ['r' => $nouveauTaux, 'id' => $id]);
+
+            // Changer un taux accepté est une modification contractuelle :
+            // elle doit laisser une trace nominative.
+            Logger::write('admin', 'Taux de commission modifié sur une collecte', [
+                'collecte' => $id,
+                'taux' => $nouveauTaux,
+                'par' => Session::userId(),
+            ]);
+        }
+
+        Logger::write('admin', 'Collecte modifiée', ['collecte' => $id, 'par' => Session::userId()]);
+
+        self::redirect('/admin/collectes');
+    }
+
+    /**
+     * Suppression d'une collecte.
+     *
+     * Refusée dès qu'un mouvement d'argent existe : effacer une collecte qui a
+     * encaissé ferait disparaître la trace de sommes réellement perçues. Dans
+     * ce cas on la ferme, on ne la supprime pas.
+     */
+    public function deleteCampaign(Request $request): void
+    {
+        Session::requireRole('ADMIN');
+
+        if (!Csrf::isValid($_POST['_csrf'] ?? null)) {
+            self::redirect('/admin/collectes');
+
+            return;
+        }
+
+        $id = (int) ($_POST['id'] ?? 0);
+
+        $mouvements = (int) (Db::selectOne(
+            'SELECT COUNT(*) AS n FROM contributions WHERE campaign_id = :id',
+            ['id' => $id],
+        )['n'] ?? 0);
+
+        if ($mouvements > 0) {
+            Db::execute(
+                'UPDATE campaigns SET status = "CLOSED", updated_at = NOW() WHERE id = :id',
+                ['id' => $id],
+            );
+
+            self::redirect('/admin/collectes?erreur=' . rawurlencode(
+                'Cette collecte a reçu des contributions : elle a été fermée plutôt que supprimée, pour conserver la trace des paiements.',
+            ));
+
+            return;
+        }
+
+        $campaign = Db::selectOne('SELECT cover_path FROM campaigns WHERE id = :id', ['id' => $id]);
+        Db::execute('DELETE FROM campaigns WHERE id = :id', ['id' => $id]);
+        Upload::delete($campaign['cover_path'] ?? null);
+
+        Logger::write('admin', 'Collecte supprimée', ['collecte' => $id, 'par' => Session::userId()]);
+
+        self::redirect('/admin/collectes');
+    }
+
+    /** Ajout ou retrait d'un rôle. */
+    public function toggleRole(Request $request): void
+    {
+        $adminId = Session::requireRole('ADMIN');
+
+        if (!Csrf::isValid($_POST['_csrf'] ?? null)) {
+            self::redirect('/admin/utilisateurs');
+
+            return;
+        }
+
+        $userId = (int) ($_POST['user_id'] ?? 0);
+        $role = strtoupper((string) ($_POST['role'] ?? ''));
+        $action = (string) ($_POST['action'] ?? '');
+
+        if (!in_array($role, ['ADMIN', 'ORGANIZER', 'API_MERCHANT'], true)) {
+            self::redirect('/admin/utilisateurs');
+
+            return;
+        }
+
+        // Se retirer soi-même le rôle ADMIN fermerait la porte de l'intérieur,
+        // sans personne pour la rouvrir depuis l'interface.
+        if ($role === 'ADMIN' && $action === 'remove' && $userId === $adminId) {
+            self::redirect('/admin/utilisateurs?erreur=' . rawurlencode(
+                'Vous ne pouvez pas retirer votre propre rôle administrateur.',
+            ));
+
+            return;
+        }
+
+        if ($action === 'remove') {
+            Db::execute(
+                'DELETE FROM user_roles WHERE user_id = :id AND role = :role',
+                ['id' => $userId, 'role' => $role],
+            );
+        } else {
+            Db::execute(
+                'INSERT IGNORE INTO user_roles (user_id, role) VALUES (:id, :role)',
+                ['id' => $userId, 'role' => $role],
+            );
+        }
+
+        Logger::write('admin', 'Rôle modifié', [
+            'utilisateur' => $userId,
+            'role' => $role,
+            'action' => $action,
+            'par' => $adminId,
+        ]);
+
+        self::redirect('/admin/utilisateurs');
     }
 
     /** Modération d'une collecte : publication ou refus. */

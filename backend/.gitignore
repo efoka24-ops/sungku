@@ -4,3 +4,8 @@
 # Journaux applicatifs (numéros de téléphone, identifiants de transaction).
 storage/logs/*
 !storage/logs/.gitkeep
+
+# Images de couverture envoyées par les organisateurs.
+uploads/*
+!uploads/.gitkeep
+!uploads/.htaccess

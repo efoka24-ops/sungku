@@ -21,7 +21,9 @@ $menu = $espace === 'admin'
         '/admin' => ['Vue d’ensemble', 'ensemble'],
         '/admin/collectes' => ['Collectes', 'collectes'],
         '/admin/contributions' => ['Contributions', 'contributions'],
+        '/admin/reversements' => ['Reversements', 'reversements'],
         '/admin/utilisateurs' => ['Utilisateurs', 'utilisateurs'],
+        '/admin/parametres' => ['Commissions', 'parametres'],
     ]
     : [
         '/tableau-de-bord' => ['Mes collectes', 'collectes'],
